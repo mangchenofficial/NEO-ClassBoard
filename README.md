@@ -1,6 +1,6 @@
-﻿# ClassBoard
+# NEO ClassBoard
 
-ClassBoard 是一个基于 Qt 6 的 Windows 桌面课表小组件应用，旨在为学生提供实时课程提醒与课表管理功能。
+NEO ClassBoard 是一个基于 Qt 6 的 Windows 桌面课表小组件应用，旨在为学生提供实时课程提醒与课表管理功能。
 
 ## 功能亮点
 

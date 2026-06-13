@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
 
     QSystemTrayIcon *trayIcon = new QSystemTrayIcon(&app);
     trayIcon->setIcon(app.style()->standardIcon(QStyle::SP_ComputerIcon));
-    trayIcon->setToolTip("ClassBoard");
+    trayIcon->setToolTip("NEO ClassBoard");
     trayIcon->setVisible(true);
 
     QMenu *trayMenu = new QMenu();

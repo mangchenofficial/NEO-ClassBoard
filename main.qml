@@ -6,7 +6,7 @@ import md3.Core
 Window {
     id: root
     visible: true
-    width: 960 * widgetScale
+    width: (isMini ? 200 : 96 + 156 + (displayItems.length - 1) * 36 + (root.nextClassName !== "" ? 80 : 0)) * widgetScale
     height: (isMini ? 32 : 56) * widgetScale
     title: "课表小组件"
     
@@ -14,12 +14,11 @@ Window {
     
     color: "transparent"
     
-    property int _tick: 0
     property bool expanded: true
     property var todayClasses: []
     property var displayItems: []
     property int currentIndex: -1
-    property string countdownText: ""
+    property int currentDisplayIndex: -1
     property string nextClassName: ""
     property bool showNotification: false
     property string notificationMsg: ""
@@ -28,6 +27,23 @@ Window {
         if (csesParser.hideInClass && csesParser.isInClassNow()) return true
         if (csesParser.hideOnMaximized && csesParser.isForegroundWindowMaximized()) return true
         return false
+    }
+
+    function timeToMinutes(timeStr) {
+        var negative = timeStr.charAt(0) === '-'
+        var t = negative ? timeStr.substring(1) : timeStr
+        var days = 0
+        var dot = t.indexOf('.')
+        if (dot >= 0) {
+            days = parseInt(t.substring(0, dot))
+            t = t.substring(dot + 1)
+        }
+        var parts = t.split(':')
+        if (parts.length < 2) return 0
+        var h = parseInt(parts[0])
+        var m = parseInt(parts[1])
+        var total = (days * 24 + h) * 60 + m
+        return negative ? -total : total
     }
     property real widgetScale: csesParser.widgetScale
     property real widgetOpacity: csesParser.widgetOpacity
@@ -52,6 +68,7 @@ Window {
             todayClasses = []
             displayItems = []
             currentIndex = -1
+            currentDisplayIndex = -1
             return
         }
         todayClasses = csesParser.getTodayClasses()
@@ -59,15 +76,12 @@ Window {
         for (var i = 0; i < todayClasses.length; i++) {
             var cls = todayClasses[i]
             var entryType = cls.type || "class"
+            if (entryType === "break") continue
             var name = ""
             var fullName = ""
-            var isBreak = entryType === "break"
             var isActivity = entryType === "activity"
             var isFree = entryType === "free"
-            if (isBreak) {
-                name = "课间"
-                fullName = "课间"
-            } else if (isActivity) {
+            if (isActivity) {
                 name = "活动"
                 fullName = cls.subject || "活动"
             } else if (isFree) {
@@ -84,7 +98,7 @@ Window {
                 start: cls.start_time.substring(0, 5),
                 end: cls.end_time.substring(0, 5),
                 type: entryType,
-                isBreak: isBreak
+                isBreak: false
             })
         }
         displayItems = items
@@ -94,48 +108,48 @@ Window {
     function updateCurrentIndex() {
         if (!csesParser.loaded || todayClasses.length === 0) {
             currentIndex = -1
-            countdownText = ""
-            nextClassName = ""
+            if (nextClassName !== "") nextClassName = ""
             return
         }
         var now = new Date()
         var nowMinutes = now.getHours() * 60 + now.getMinutes()
-        var nowSec = now.getSeconds()
         var found = -1
         for (var i = 0; i < todayClasses.length; i++) {
             var cls = todayClasses[i]
-            var startParts = cls.start_time.split(":")
-            var endParts = cls.end_time.split(":")
-            var startMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1])
-            var endMin = parseInt(endParts[0]) * 60 + parseInt(endParts[1])
+            var startMin = root.timeToMinutes(cls.start_time)
+            var endMin = root.timeToMinutes(cls.end_time)
             if (nowMinutes >= startMin && nowMinutes < endMin) {
                 found = i
-                var remain = (endMin - nowMinutes) * 60 - nowSec
-                var rm = Math.floor(remain / 60)
-                var rs = remain % 60
-                countdownText = rm + ":" + (rs < 10 ? "0" : "") + rs
                 break
             }
         }
+        var newNext = ""
         if (found === -1) {
-            countdownText = ""
             for (var j = 0; j < todayClasses.length; j++) {
-                var sp = todayClasses[j].start_time.split(":")
-                var sm = parseInt(sp[0]) * 60 + parseInt(sp[1])
+                if (todayClasses[j].type === "break") continue
+                var sm = root.timeToMinutes(todayClasses[j].start_time)
                 if (sm > nowMinutes) {
                     var subj = csesParser.getSubjectInfo(todayClasses[j].subject)
-                    nextClassName = subj.simplified_name || todayClasses[j].subject
+                    newNext = subj.simplified_name || todayClasses[j].subject
                     break
                 }
             }
         } else {
-            nextClassName = ""
-            if (found + 1 < todayClasses.length) {
-                var subj2 = csesParser.getSubjectInfo(todayClasses[found + 1].subject)
-                nextClassName = subj2.simplified_name || todayClasses[found + 1].subject
+            for (var j2 = found + 1; j2 < todayClasses.length; j2++) {
+                if (todayClasses[j2].type === "break") continue
+                var subj2 = csesParser.getSubjectInfo(todayClasses[j2].subject)
+                newNext = subj2.simplified_name || todayClasses[j2].subject
+                break
             }
         }
-        currentIndex = found
+        if (nextClassName !== newNext) nextClassName = newNext
+        if (currentIndex !== found) currentIndex = found
+        var dispIdx = -1
+        for (var k = 0; k < todayClasses.length; k++) {
+            if (todayClasses[k].type !== "break") dispIdx++
+            if (k === found) break
+        }
+        if (currentDisplayIndex !== dispIdx) currentDisplayIndex = found >= 0 ? dispIdx : -1
     }
     
     Connections {
@@ -146,6 +160,7 @@ Window {
         function onClassChanged(subject, type) {
             root.notificationMsg = csesParser.notificationText
             root.showNotification = true
+            notifTimer.interval = 3000
             notifTimer.start()
         }
         function onPreparationBell(subjectName) {
@@ -165,7 +180,7 @@ Window {
     Rectangle {
         id: background
         anchors.fill: parent
-        color: "#F0F4F9"
+        color: Theme.color.surfaceContainerLow
         opacity: {
             if (root.shouldHide) return 0
             if (csesParser.hoverFade && hoverArea.containsMouse) return 0.15
@@ -200,14 +215,21 @@ Window {
             Text {
                 Layout.alignment: Qt.AlignVCenter
                 text: {
-                    root._tick
                     var now = new Date()
                     return String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0')
                 }
                 font.family: root.appFont
                 font.pixelSize: 14
                 font.weight: Font.Bold
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
+
+                Timer {
+                    interval: 10000
+                    running: true
+                    repeat: true
+                    onTriggered: parent.text = String(new Date().getHours()).padStart(2, '0') + ":" + String(new Date().getMinutes()).padStart(2, '0')
+                    Component.onCompleted: triggered()
+                }
             }
 
             Text {
@@ -216,31 +238,54 @@ Window {
                 text: "暂无课表"
                 font.family: root.appFont
                 font.pixelSize: 12
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
                 opacity: 0.6
             }
 
             Text {
                 Layout.alignment: Qt.AlignVCenter
-                visible: csesParser.loaded && root.currentIndex >= 0 && root.currentIndex < root.displayItems.length
+                visible: csesParser.loaded && root.currentDisplayIndex >= 0 && root.currentDisplayIndex < root.displayItems.length
                 text: {
-                    if (root.currentIndex < 0) return ""
-                    var item = root.displayItems[root.currentIndex]
+                    if (root.currentDisplayIndex < 0) return ""
+                    var item = root.displayItems[root.currentDisplayIndex]
                     return item.name + "  " + item.start + " - " + item.end
                 }
                 font.family: root.appFont
                 font.pixelSize: 13
                 font.weight: Font.Bold
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
             }
 
             Text {
                 Layout.alignment: Qt.AlignVCenter
-                visible: root.countdownText !== ""
-                text: root.countdownText
                 font.family: root.appFont
                 font.pixelSize: 12
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
+
+                property string _cdMini: ""
+                visible: _cdMini !== ""
+                text: _cdMini
+
+                Timer {
+                    interval: 1000
+                    running: root.isMini
+                    repeat: true
+                    onTriggered: {
+                        if (root.currentIndex < 0) { parent._cdMini = ""; return }
+                        var now = new Date()
+                        var nowMinutes = now.getHours() * 60 + now.getMinutes()
+                        var nowSec = now.getSeconds()
+                        var cls = root.todayClasses[root.currentIndex]
+                        if (!cls) { parent._cdMini = ""; return }
+                        var endMin = root.timeToMinutes(cls.end_time)
+                        var remain = (endMin - nowMinutes) * 60 - nowSec
+                        if (remain <= 0) { parent._cdMini = ""; return }
+                        var rm = Math.floor(remain / 60)
+                        var rs = remain % 60
+                        parent._cdMini = rm + ":" + (rs < 10 ? "0" : "") + rs
+                    }
+                    onRunningChanged: { if (running) triggered() }
+                }
             }
 
             Item { Layout.fillWidth: true }
@@ -251,7 +296,7 @@ Window {
                 text: "下一节: " + root.nextClassName
                 font.family: root.appFont
                 font.pixelSize: 11
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
             }
         }
 
@@ -264,36 +309,24 @@ Window {
             ColumnLayout {
                 Layout.preferredWidth: 90
                 Layout.fillHeight: true
+                Layout.alignment: Qt.AlignVCenter
                 spacing: 0
 
                 Text {
                     Layout.alignment: Qt.AlignHCenter
-                    text: {
-                        root._tick
-                        var now = new Date()
-                        return (now.getMonth() + 1) + "/" + now.getDate()
-                    }
-                    font.family: root.appFont
-                    font.pixelSize: 9
-                    color: "#000000"
-                }
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
                 text: {
                     var days = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"]
-                    root._tick
                     var now = new Date()
                     return days[now.getDay()]
                 }
                 font.family: root.appFont
                 font.pixelSize: 11
                 font.weight: Font.Bold
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
                 text: {
-                    root._tick
                     var now = new Date()
                     var h = String(now.getHours()).padStart(2, '0')
                     var m = String(now.getMinutes()).padStart(2, '0')
@@ -302,7 +335,18 @@ Window {
                 font.family: root.appFont
                 font.pixelSize: 20
                 font.weight: Font.Bold
-                color: "#1C1B1F"
+                color: Theme.color.onSurfaceColor
+
+                Timer {
+                    interval: 10000
+                    running: true
+                    repeat: true
+                    onTriggered: {
+                        var now = new Date()
+                        parent.text = String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0')
+                    }
+                    Component.onCompleted: triggered()
+                }
             }
             Text {
                 Layout.alignment: Qt.AlignHCenter
@@ -310,7 +354,7 @@ Window {
                 text: "第" + csesParser.currentWeek + "周"
                 font.family: root.appFont
                 font.pixelSize: 9
-                color: "#000000"
+                color: Theme.color.onSurfaceColor
             }
         }
         
@@ -323,7 +367,7 @@ Window {
             text: "暂时没有课表"
             font.family: root.appFont
             font.pixelSize: 12
-            color: "#000000"
+            color: Theme.color.onSurfaceColor
             opacity: 0.6
         }
         
@@ -336,99 +380,135 @@ Window {
             text: "今天没有课"
             font.family: root.appFont
             font.pixelSize: 12
-            color: "#000000"
+            color: Theme.color.onSurfaceColor
             opacity: 0.6
         }
         
         Repeater {
             model: displayItems
-            
+
             Item {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                
-                property bool selected: index === root.currentIndex
+                Layout.preferredWidth: selected ? 156 : 36
+                Layout.preferredHeight: 36
+                Layout.alignment: Qt.AlignVCenter
+                Layout.fillHeight: false
+
+                property bool selected: index === root.currentDisplayIndex
                 property var itemData: modelData
-                
+
                 Rectangle {
                     id: tabBg
                     anchors.fill: parent
                     anchors.margins: 2
-                    radius: Theme.shape.cornerSmall
-                    color: parent.selected ? "#D3E3FD" : (itemData.isBreak ? "#F0F4F9" : "transparent")
-                    opacity: parent.selected ? 0.7 : (itemData.isBreak ? 0.5 : 0)
-
-                    Behavior on color { ColorAnimation { duration: 200 } }
-                    Behavior on opacity { NumberAnimation { duration: 200 } }
+                    radius: 6
+                    color: parent.selected ? Theme.color.secondaryContainer : "transparent"
+                    opacity: parent.selected ? 0.85 : 0
                 }
 
                 Rectangle {
                     visible: parent.selected
                     anchors.fill: tabBg
-                    anchors.margins: -4
-                    radius: tabBg.radius + 4
+                    anchors.margins: -3
+                    radius: tabBg.radius + 3
                     color: "transparent"
                     border.width: 2
-                    border.color: "#400B57D0"
+                    border.color: Theme.color.primary
+                    opacity: 0.4
                     z: -1
-
-                    Behavior on visible { NumberAnimation { duration: 200 } }
                 }
-                
-                ColumnLayout {
-                    anchors.centerIn: parent
-                    spacing: 0
-                    
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    spacing: 6
+
                     Text {
-                        Layout.alignment: Qt.AlignHCenter
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.fillWidth: !selected
+                        horizontalAlignment: selected ? Text.AlignLeft : Text.AlignHCenter
+                        elide: Text.ElideRight
                         text: itemData.name
                         font.family: root.appFont
-                        font.pixelSize: itemData.isBreak ? 10 : 13
-                        font.weight: parent.parent.selected ? Font.Bold : Font.Normal
-                        color: parent.parent.selected ? "#000000" : (itemData.isBreak ? "#000000" : "#000000")
+                        font.pixelSize: selected ? 14 : 13
+                        font.weight: selected ? Font.Bold : Font.Normal
+                        color: Theme.color.onSurfaceColor
                     }
                     Text {
-                        Layout.alignment: Qt.AlignHCenter
-                        visible: parent.parent.selected && root.countdownText !== ""
-                        text: root.countdownText
+                        Layout.alignment: Qt.AlignVCenter
+                        visible: selected
+                        text: itemData.start + " - " + itemData.end
                         font.family: root.appFont
-                        font.pixelSize: 10
+                        font.pixelSize: 11
+                        color: Theme.color.onSurfaceColor
+                        opacity: 0.7
+                    }
+                    Text {
+                        Layout.alignment: Qt.AlignVCenter
+                        Layout.preferredWidth: 36
+                        Layout.maximumWidth: 36
+                        Layout.minimumWidth: 36
+                        horizontalAlignment: Text.AlignHCenter
+                        font.family: root.appFont
+                        font.pixelSize: 11
                         font.weight: Font.Bold
-                        color: "#000000"
+                        color: Theme.color.onSurfaceColor
+
+                        property string _cd: ""
+                        visible: selected && _cd !== ""
+                        text: _cd
+
+                        Timer {
+                            interval: 1000
+                            running: parent.selected
+                            repeat: true
+                            onTriggered: {
+                                if (root.currentIndex < 0) { parent._cd = ""; return }
+                                var now = new Date()
+                                var nowMinutes = now.getHours() * 60 + now.getMinutes()
+                                var nowSec = now.getSeconds()
+                                var cls = root.todayClasses[root.currentIndex]
+                                if (!cls) { parent._cd = ""; return }
+                                var endMin = root.timeToMinutes(cls.end_time)
+                                var remain = (endMin - nowMinutes) * 60 - nowSec
+                                if (remain <= 0) { parent._cd = ""; return }
+                                var rm = Math.floor(remain / 60)
+                                var rs = remain % 60
+                                parent._cd = rm + ":" + (rs < 10 ? "0" : "") + rs
+                            }
+                            onRunningChanged: { if (running) triggered() }
+                        }
                     }
                 }
-                
-                Rectangle {
-                    id: progressIndicator
-                    visible: parent.selected
+
+                LinearProgress {
+                    visible: selected
                     anchors.bottom: parent.bottom
                     anchors.left: parent.left
                     anchors.right: parent.right
-                    height: 2
-                    radius: 1
-                    color: "#000000"
-                    
-                    property real progress: {
-                        root._tick
-                        var now = new Date()
-                        var nowMinutes = now.getHours() * 60 + now.getMinutes()
-                        var startParts = itemData.start.split(":")
-                        var endParts = itemData.end.split(":")
-                        var startMin = parseInt(startParts[0]) * 60 + parseInt(startParts[1])
-                        var endMin = parseInt(endParts[0]) * 60 + parseInt(endParts[1])
-                        var total = endMin - startMin
-                        if (total <= 0) return 0
-                        var elapsed = nowMinutes - startMin
-                        return Math.max(0, Math.min(1, elapsed / total))
-                    }
-                    
-                    width: parent.width * progress
-                    
-                    Behavior on width {
-                        NumberAnimation { duration: 1000; easing.type: Easing.OutQuad }
+                    anchors.leftMargin: 8
+                    anchors.rightMargin: 8
+                    height: 6
+                    wavy: true
+
+                    Timer {
+                        interval: 1000
+                        running: parent.visible
+                        repeat: true
+                        onTriggered: {
+                            var now = new Date()
+                            var nowMinutes = now.getHours() * 60 + now.getMinutes()
+                            var startMin = root.timeToMinutes(itemData.start)
+                            var endMin = root.timeToMinutes(itemData.end)
+                            var total = endMin - startMin
+                            if (total <= 0) { parent.value = 0; return }
+                            var elapsed = nowMinutes - startMin
+                            parent.value = Math.max(0, Math.min(1, elapsed / total))
+                        }
+                        Component.onCompleted: triggered()
                     }
                 }
-                
+
                 Ripple {
                     anchors.fill: parent
                     onClicked: root.expanded = !root.expanded
@@ -441,7 +521,7 @@ Window {
             Layout.preferredWidth: 80
             Layout.fillHeight: true
             Layout.margins: 2
-            color: "#E8DEF8"
+            color: Theme.color.primaryContainer
             radius: Theme.shape.cornerSmall
             opacity: 0.6
             
@@ -454,7 +534,7 @@ Window {
                     text: "下一节"
                     font.family: root.appFont
                     font.pixelSize: 9
-                    color: "#000000"
+                    color: Theme.color.onPrimaryContainerColor
                 }
                 Text {
                     Layout.alignment: Qt.AlignHCenter
@@ -462,7 +542,7 @@ Window {
                     font.family: root.appFont
                     font.pixelSize: 12
                     font.weight: Font.Bold
-                    color: "#000000"
+                    color: Theme.color.onPrimaryContainerColor
                 }
             }
         }
@@ -470,20 +550,19 @@ Window {
     }
     
     Timer {
-        interval: 1000
+        interval: 10000
         running: true
         repeat: true
         onTriggered: {
-            root._tick++
             root.updateCurrentIndex()
         }
     }
     
     Component.onCompleted: {
+        refreshData()
         var screen = Qt.application.screens[0]
         x = (screen.width - width) / 2
         y = 10
-        refreshData()
     }
     
     Rectangle {
@@ -495,16 +574,26 @@ Window {
         width: 260
         height: 36
         radius: Theme.shape.cornerMedium
-        color: "#1C1B1F"
+        color: Theme.color.inverseSurface
         opacity: 0.9
-        
-        Text {
+
+        RowLayout {
             anchors.centerIn: parent
-            text: root.notificationMsg
-            font.family: root.appFont
-            font.pixelSize: 13
-            font.weight: Font.Bold
-            color: "#FFFFFF"
+            spacing: 6
+
+            Icon {
+                iconSize: 16
+                svgPath: "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z"
+                color: Theme.color.inverseOnSurface
+            }
+
+            Text {
+                text: root.notificationMsg
+                font.family: root.appFont
+                font.pixelSize: 13
+                font.weight: Font.Bold
+                color: Theme.color.inverseOnSurface
+            }
         }
         
         Behavior on opacity {

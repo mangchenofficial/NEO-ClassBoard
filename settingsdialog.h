@@ -19,6 +19,8 @@
 #include <QStackedWidget>
 #include <QScrollArea>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include "csesparser.h"
 
 class SettingsDialog : public QDialog
@@ -29,12 +31,15 @@ public:
     explicit SettingsDialog(CsesParser &parser, QWidget *parent = nullptr)
         : QDialog(parent), m_parser(parser), m_currentPage(0)
     {
+        bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+        initColors(dark);
+
         setWindowTitle("设置");
         setFixedSize(600, 520);
-        setStyleSheet(
-            "QDialog { background-color: #FEF7FF; }"
-            "QLabel { color: #1C1B1F; font-size: 14px; }"
-        );
+        setStyleSheet(QString(
+            "QDialog { background-color: %1; }"
+            "QLabel { color: %2; font-size: 14px; }"
+        ).arg(m_surface, m_onSurface));
 
         QHBoxLayout *mainLayout = new QHBoxLayout(this);
         mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -51,25 +56,65 @@ private:
     QList<QPushButton*> m_navBtns;
     QLabel *m_pathLabel;
 
-    static constexpr int PAGE_COUNT = 5;
+    // MD3 theme colors
+    QString m_surface, m_onSurface, m_surfaceContainer, m_onSurfaceVariant;
+    QString m_primary, m_onPrimary, m_primaryContainer, m_onPrimaryContainer;
+    QString m_secondaryContainer, m_outline, m_outlineVariant, m_error;
+
+    void initColors(bool dark) {
+        if (dark) {
+            m_surface = "#1C1B1F";
+            m_onSurface = "#E6E1E5";
+            m_surfaceContainer = "#2B2930";
+            m_onSurfaceVariant = "#CAC4D0";
+            m_primary = "#D0BCFF";
+            m_onPrimary = "#381E72";
+            m_primaryContainer = "#4F378B";
+            m_onPrimaryContainer = "#EADDFF";
+            m_secondaryContainer = "#4A4458";
+            m_outline = "#938F99";
+            m_outlineVariant = "#49454F";
+            m_error = "#F2B8B5";
+        } else {
+            m_surface = "#FEF7FF";
+            m_onSurface = "#1C1B1F";
+            m_surfaceContainer = "#F3EDF7";
+            m_onSurfaceVariant = "#49454F";
+            m_primary = "#6750A4";
+            m_onPrimary = "#FFFFFF";
+            m_primaryContainer = "#E8DEF8";
+            m_onPrimaryContainer = "#21005D";
+            m_secondaryContainer = "#E8DEF8";
+            m_outline = "#79747E";
+            m_outlineVariant = "#CAC4D0";
+            m_error = "#B3261E";
+        }
+    }
+
+    QString navBtnStyle(int index, int active) {
+        if (index == active) {
+            return QString("QPushButton { background-color: %1; color: %2; border: none; "
+                           "border-radius: 12px; font-size: 11px; font-weight: bold; }")
+                .arg(m_primaryContainer, m_primary);
+        }
+        return QString("QPushButton { background-color: transparent; color: %1; border: none; "
+                       "border-radius: 12px; font-size: 11px; font-weight: bold; }"
+                       "QPushButton:hover { background-color: %2; }")
+            .arg(m_onSurfaceVariant, m_primaryContainer);
+    }
 
     void switchPage(int index) {
         m_currentPage = index;
         m_contentStack->setCurrentIndex(index);
         for (int i = 0; i < m_navBtns.size(); i++) {
-            m_navBtns[i]->setStyleSheet(i == index ?
-                "QPushButton { background-color: #E8DEF8; color: #6750A4; border: none; "
-                "border-radius: 12px; font-size: 11px; font-weight: bold; }" :
-                "QPushButton { background-color: transparent; color: #49454F; border: none; "
-                "border-radius: 12px; font-size: 11px; font-weight: bold; }"
-                "QPushButton:hover { background-color: #E8DEF8; }");
+            m_navBtns[i]->setStyleSheet(navBtnStyle(i, index));
         }
     }
 
     QWidget* createNavPanel() {
         QWidget *nav = new QWidget;
         nav->setFixedWidth(72);
-        nav->setStyleSheet("background-color: #F3EDF7;");
+        nav->setStyleSheet(QString("background-color: %1;").arg(m_surfaceContainer));
 
         QVBoxLayout *layout = new QVBoxLayout(nav);
         layout->setContentsMargins(4, 16, 4, 16);
@@ -80,12 +125,7 @@ private:
         for (int i = 0; i < PAGE_COUNT; i++) {
             QPushButton *btn = new QPushButton(icons[i] + "\n" + labels[i]);
             btn->setFixedSize(64, 48);
-            btn->setStyleSheet(i == 0 ?
-                "QPushButton { background-color: #E8DEF8; color: #6750A4; border: none; "
-                "border-radius: 12px; font-size: 11px; font-weight: bold; }" :
-                "QPushButton { background-color: transparent; color: #49454F; border: none; "
-                "border-radius: 12px; font-size: 11px; font-weight: bold; }"
-                "QPushButton:hover { background-color: #E8DEF8; }");
+            btn->setStyleSheet(navBtnStyle(i, 0));
             connect(btn, &QPushButton::clicked, this, [this, i]() { switchPage(i); });
             layout->addWidget(btn);
             m_navBtns.append(btn);
@@ -97,7 +137,7 @@ private:
 
     QWidget* createContentPanel() {
         QWidget *panel = new QWidget;
-        panel->setStyleSheet("background-color: #FEF7FF;");
+        panel->setStyleSheet(QString("background-color: %1;").arg(m_surface));
 
         QVBoxLayout *outerLayout = new QVBoxLayout(panel);
         outerLayout->setContentsMargins(0, 0, 0, 0);
@@ -117,82 +157,113 @@ private:
         QScrollArea *area = new QScrollArea;
         area->setWidgetResizable(true);
         area->setWidget(content);
-        area->setStyleSheet(
-            "QScrollArea { border: none; background-color: #FEF7FF; }"
+        area->setStyleSheet(QString(
+            "QScrollArea { border: none; background-color: %1; }"
             "QScrollBar:vertical { width: 6px; background: transparent; }"
-            "QScrollBar::handle:vertical { background: #CAC4D0; border-radius: 3px; min-height: 20px; }"
+            "QScrollBar::handle:vertical { background: %2; border-radius: 3px; min-height: 20px; }"
             "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
-        );
+        ).arg(m_surface, m_outlineVariant));
         return area;
     }
 
     QString cbStyle() {
-        return "QCheckBox { font-size: 13px; color: #1C1B1F; spacing: 8px; }"
-               "QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; "
-               "border: 2px solid #79747E; background: transparent; }"
-               "QCheckBox::indicator:checked { background: #0B57D0; border-color: #0B57D0; }";
+        return QString(
+            "QCheckBox { font-size: 13px; color: %1; spacing: 8px; }"
+            "QCheckBox::indicator { width: 18px; height: 18px; border-radius: 4px; "
+            "border: 2px solid %2; background: transparent; }"
+            "QCheckBox::indicator:checked { background: %3; border-color: %3; }"
+        ).arg(m_onSurface, m_outline, m_primary);
     }
 
     QString sliderStyle() {
-        return "QSlider::groove:horizontal { height: 6px; background: #CAC4D0; border-radius: 3px; }"
-               "QSlider::handle:horizontal { width: 18px; height: 18px; margin: -6px 0; "
-               "background: #0B57D0; border-radius: 9px; }"
-               "QSlider::sub-page:horizontal { background: #0B57D0; border-radius: 3px; }";
+        return QString(
+            "QSlider::groove:horizontal { height: 6px; background: %1; border-radius: 3px; }"
+            "QSlider::handle:horizontal { width: 18px; height: 18px; margin: -6px 0; "
+            "background: %2; border-radius: 9px; }"
+            "QSlider::sub-page:horizontal { background: %2; border-radius: 3px; }"
+        ).arg(m_outlineVariant, m_primary);
     }
 
     QString spinStyle() {
-        return "QSpinBox { padding: 6px 10px; border: 1px solid #CAC4D0; border-radius: 8px; "
-               "background: #F3EDF7; font-size: 13px; }";
+        return QString(
+            "QSpinBox { padding: 6px 10px; border: 1px solid %1; border-radius: 8px; "
+            "background: %2; font-size: 13px; color: %3; }"
+        ).arg(m_outlineVariant, m_surfaceContainer, m_onSurface);
     }
 
     QFrame* hsep() {
         QFrame *sep = new QFrame;
         sep->setFrameShape(QFrame::HLine);
-        sep->setStyleSheet("background-color: #CAC4D0; max-height: 1px; border: none;");
+        sep->setStyleSheet(QString("background-color: %1; max-height: 1px; border: none;").arg(m_outlineVariant));
         return sep;
     }
 
+    QString pageTitleStyle() {
+        return QString("font-size: 22px; font-weight: bold; color: %1;").arg(m_onSurface);
+    }
+
+    QString sectionTitleStyle() {
+        return QString("font-size: 14px; font-weight: bold; color: %1;").arg(m_onSurface);
+    }
+
+    QString labelSmallStyle() {
+        return QString("font-size: 12px; color: %1; min-width: 36px;").arg(m_onSurfaceVariant);
+    }
+
+    QString primaryBtnStyle() {
+        return QString(
+            "QPushButton { background-color: %1; color: %2; border: none; "
+            "border-radius: 20px; padding: 8px 24px; font-size: 13px; font-weight: bold; }"
+        ).arg(m_primary, m_onPrimary);
+    }
+
+    QString outlineBtnStyle() {
+        return QString(
+            "QPushButton { background-color: transparent; color: %1; border: 1px solid %2; "
+            "border-radius: 20px; padding: 5px 16px; font-size: 12px; font-weight: bold; }"
+            "QPushButton:hover { background-color: %3; }"
+        ).arg(m_primary, m_outline, m_surfaceContainer);
+    }
+
+    static constexpr int PAGE_COUNT = 5;
+
     QWidget* createSchedulePage() {
         QWidget *page = new QWidget;
-        page->setStyleSheet("background-color: #FEF7FF;");
+        page->setStyleSheet(QString("background-color: %1;").arg(m_surface));
 
         QVBoxLayout *layout = new QVBoxLayout(page);
         layout->setContentsMargins(24, 24, 24, 24);
         layout->setSpacing(12);
 
         QLabel *title = new QLabel("课表设置");
-        title->setStyleSheet("font-size: 22px; font-weight: bold; color: #1C1B1F;");
+        title->setStyleSheet(pageTitleStyle());
         layout->addWidget(title);
         layout->addWidget(hsep());
 
         QLabel *fileTitle = new QLabel("课表文件");
-        fileTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #1C1B1F;");
+        fileTitle->setStyleSheet(sectionTitleStyle());
         layout->addWidget(fileTitle);
 
         QHBoxLayout *fileRow = new QHBoxLayout;
         fileRow->setSpacing(12);
         m_pathLabel = new QLabel(m_parser.loaded() ? m_parser.filePath() : "未导入课表");
         m_pathLabel->setWordWrap(true);
-        QString pathColor = m_parser.loaded() ? "#1C1B1F" : "#49454F";
+        QString pathColor = m_parser.loaded() ? m_onSurface : m_onSurfaceVariant;
         m_pathLabel->setStyleSheet(
-            QString("background-color: #F3EDF7; color: %1; padding: 10px 12px; "
-                    "border-radius: 12px; font-size: 13px;").arg(pathColor)
+            QString("background-color: %1; color: %2; padding: 10px 12px; "
+                    "border-radius: 12px; font-size: 13px;").arg(m_surfaceContainer, pathColor)
         );
         fileRow->addWidget(m_pathLabel, 1);
         QPushButton *importBtn = new QPushButton("导入");
         importBtn->setFixedSize(88, 40);
-        importBtn->setStyleSheet(
-            "QPushButton { background-color: #0B57D0; color: white; border: none; "
-            "border-radius: 20px; font-size: 14px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #0842A0; }"
-        );
+        importBtn->setStyleSheet(primaryBtnStyle());
         fileRow->addWidget(importBtn);
         layout->addLayout(fileRow);
 
         layout->addWidget(hsep());
 
         QLabel *timeTitle = new QLabel("时间设置");
-        timeTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #1C1B1F;");
+        timeTitle->setStyleSheet(sectionTitleStyle());
         layout->addWidget(timeTitle);
 
         QHBoxLayout *offsetRow = new QHBoxLayout;
@@ -250,14 +321,14 @@ private:
 
     QWidget* createAppearancePage() {
         QWidget *page = new QWidget;
-        page->setStyleSheet("background-color: #FEF7FF;");
+        page->setStyleSheet(QString("background-color: %1;").arg(m_surface));
 
         QVBoxLayout *layout = new QVBoxLayout(page);
         layout->setContentsMargins(24, 24, 24, 24);
         layout->setSpacing(12);
 
         QLabel *title = new QLabel("外观设置");
-        title->setStyleSheet("font-size: 22px; font-weight: bold; color: #1C1B1F;");
+        title->setStyleSheet(pageTitleStyle());
         layout->addWidget(title);
         layout->addWidget(hsep());
 
@@ -270,7 +341,7 @@ private:
         scaleSlider->setStyleSheet(sliderStyle());
         scaleRow->addWidget(scaleSlider, 1);
         QLabel *scaleVal = new QLabel(QString::number(qRound(m_parser.widgetScale() * 100)) + "%");
-        scaleVal->setStyleSheet("font-size: 12px; color: #49454F; min-width: 36px;");
+        scaleVal->setStyleSheet(labelSmallStyle());
         scaleRow->addWidget(scaleVal);
         layout->addLayout(scaleRow);
 
@@ -283,7 +354,7 @@ private:
         opacitySlider->setStyleSheet(sliderStyle());
         opacityRow->addWidget(opacitySlider, 1);
         QLabel *opacityVal = new QLabel(QString::number(qRound(m_parser.widgetOpacity() * 100)) + "%");
-        opacityVal->setStyleSheet("font-size: 12px; color: #49454F; min-width: 36px;");
+        opacityVal->setStyleSheet(labelSmallStyle());
         opacityRow->addWidget(opacityVal);
         layout->addLayout(opacityRow);
 
@@ -293,8 +364,9 @@ private:
         QFontComboBox *fontCombo = new QFontComboBox;
         fontCombo->setCurrentFont(QFont(m_parser.fontFamily()));
         fontCombo->setStyleSheet(
-            "QFontComboBox { padding: 6px 10px; border: 1px solid #CAC4D0; border-radius: 8px; "
-            "background: #F3EDF7; font-size: 13px; min-width: 180px; }"
+            QString("QFontComboBox { padding: 6px 10px; border: 1px solid %1; border-radius: 8px; "
+                    "background: %2; font-size: 13px; color: %3; min-width: 180px; }")
+                .arg(m_outlineVariant, m_surfaceContainer, m_onSurface)
         );
         fontRow->addWidget(fontCombo, 1);
         layout->addLayout(fontRow);
@@ -316,14 +388,14 @@ private:
 
     QWidget* createBehaviorPage() {
         QWidget *page = new QWidget;
-        page->setStyleSheet("background-color: #FEF7FF;");
+        page->setStyleSheet(QString("background-color: %1;").arg(m_surface));
 
         QVBoxLayout *layout = new QVBoxLayout(page);
         layout->setContentsMargins(24, 24, 24, 24);
         layout->setSpacing(12);
 
         QLabel *title = new QLabel("行为设置");
-        title->setStyleSheet("font-size: 22px; font-weight: bold; color: #1C1B1F;");
+        title->setStyleSheet(pageTitleStyle());
         layout->addWidget(title);
         layout->addWidget(hsep());
 
@@ -345,7 +417,7 @@ private:
         layout->addWidget(hsep());
 
         QLabel *autoHideTitle = new QLabel("自动隐藏");
-        autoHideTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #1C1B1F;");
+        autoHideTitle->setStyleSheet(sectionTitleStyle());
         layout->addWidget(autoHideTitle);
 
         QCheckBox *hideMaxCheck = new QCheckBox("窗口最大化时隐藏");
@@ -371,14 +443,14 @@ private:
 
     QWidget* createNotificationPage() {
         QWidget *page = new QWidget;
-        page->setStyleSheet("background-color: #FEF7FF;");
+        page->setStyleSheet(QString("background-color: %1;").arg(m_surface));
 
         QVBoxLayout *layout = new QVBoxLayout(page);
         layout->setContentsMargins(24, 24, 24, 24);
         layout->setSpacing(12);
 
         QLabel *title = new QLabel("通知设置");
-        title->setStyleSheet("font-size: 22px; font-weight: bold; color: #1C1B1F;");
+        title->setStyleSheet(pageTitleStyle());
         layout->addWidget(title);
         layout->addWidget(hsep());
 
@@ -396,16 +468,12 @@ private:
         volumeSlider->setStyleSheet(sliderStyle());
         volumeRow->addWidget(volumeSlider, 1);
         QLabel *volumeVal = new QLabel(QString::number(qRound(m_parser.soundVolume() * 100)) + "%");
-        volumeVal->setStyleSheet("font-size: 12px; color: #49454F; min-width: 36px;");
+        volumeVal->setStyleSheet(labelSmallStyle());
         volumeRow->addWidget(volumeVal);
         layout->addLayout(volumeRow);
 
         QPushButton *testSoundBtn = new QPushButton("试听铃声");
-        testSoundBtn->setStyleSheet(
-            "QPushButton { background-color: transparent; color: #6750A4; border: 1px solid #79747E; "
-            "border-radius: 20px; padding: 6px 16px; font-size: 12px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #F3EDF7; }"
-        );
+        testSoundBtn->setStyleSheet(outlineBtnStyle());
         layout->addWidget(testSoundBtn);
 
         QHBoxLayout *soundFileRow = new QHBoxLayout;
@@ -415,16 +483,13 @@ private:
         soundFileRow->addWidget(soundFileLabel);
         QLabel *soundFilePathLabel = new QLabel(m_parser.soundFilePath().isEmpty() ? "未设置" : QFileInfo(m_parser.soundFilePath()).fileName());
         soundFilePathLabel->setStyleSheet(
-            "background-color: #F3EDF7; color: #49454F; padding: 6px 10px; "
-            "border-radius: 8px; font-size: 12px; min-width: 120px;"
+            QString("background-color: %1; color: %2; padding: 6px 10px; "
+                    "border-radius: 8px; font-size: 12px; min-width: 120px;")
+                .arg(m_surfaceContainer, m_onSurfaceVariant)
         );
         soundFileRow->addWidget(soundFilePathLabel, 1);
         QPushButton *chooseSoundBtn = new QPushButton("选择");
-        chooseSoundBtn->setStyleSheet(
-            "QPushButton { background-color: transparent; color: #6750A4; border: 1px solid #79747E; "
-            "border-radius: 20px; padding: 5px 12px; font-size: 11px; font-weight: bold; }"
-            "QPushButton:hover { background-color: #F3EDF7; }"
-        );
+        chooseSoundBtn->setStyleSheet(outlineBtnStyle());
         soundFileRow->addWidget(chooseSoundBtn);
         layout->addLayout(soundFileRow);
 
@@ -434,7 +499,7 @@ private:
         connect(volumeSlider, &QSlider::valueChanged, &m_parser, [&p = m_parser, volumeVal](int val) {
             p.setSoundVolume(val / 100.0); volumeVal->setText(QString::number(val) + "%");
         });
-        connect(testSoundBtn, &QPushButton::clicked, &m_parser, [&p = m_parser]() { p.playNotificationSound(); });
+        connect(testSoundBtn, &QPushButton::clicked, &m_parser, [&p = m_parser]() { p.testNotificationSound(); });
         connect(chooseSoundBtn, &QPushButton::clicked, this, [this, soundFilePathLabel]() {
             QString path = QFileDialog::getOpenFileName(this, "选择铃声文件", "",
                 "音频文件 (*.wav);;所有文件 (*)");
@@ -449,42 +514,42 @@ private:
 
     QWidget* createAboutPage() {
         QWidget *page = new QWidget;
-        page->setStyleSheet("background-color: #FEF7FF;");
+        page->setStyleSheet(QString("background-color: %1;").arg(m_surface));
 
         QVBoxLayout *layout = new QVBoxLayout(page);
         layout->setContentsMargins(24, 24, 24, 24);
         layout->setSpacing(12);
 
         QLabel *title = new QLabel("NEO ClassBoard");
-        title->setStyleSheet("font-size: 28px; font-weight: bold; color: #1C1B1F;");
+        title->setStyleSheet(QString("font-size: 28px; font-weight: bold; color: %1;").arg(m_onSurface));
         layout->addWidget(title);
 
-        QLabel *version = new QLabel("版本 1.0.0");
-        version->setStyleSheet("font-size: 14px; color: #49454F;");
+        QLabel *version = new QLabel("版本 1.1.0");
+        version->setStyleSheet(QString("font-size: 14px; color: %1;").arg(m_onSurfaceVariant));
         layout->addWidget(version);
 
         layout->addWidget(hsep());
 
         QLabel *desc = new QLabel("一款轻量级桌面课表小组件\n支持 CSES 课表格式导入、换课、调休日、预备铃等功能");
-        desc->setStyleSheet("font-size: 13px; color: #49454F; line-height: 1.6;");
+        desc->setStyleSheet(QString("font-size: 13px; color: %1; line-height: 1.6;").arg(m_onSurfaceVariant));
         desc->setWordWrap(true);
         layout->addWidget(desc);
 
         layout->addSpacing(8);
 
         QLabel *techTitle = new QLabel("技术栈");
-        techTitle->setStyleSheet("font-size: 14px; font-weight: bold; color: #1C1B1F;");
+        techTitle->setStyleSheet(sectionTitleStyle());
         layout->addWidget(techTitle);
 
         QLabel *tech = new QLabel("Qt 6 (QML + C++)\nMaterial Design 3 组件库\nCSES YAML 课表格式");
-        tech->setStyleSheet("font-size: 13px; color: #49454F;");
+        tech->setStyleSheet(QString("font-size: 13px; color: %1;").arg(m_onSurfaceVariant));
         tech->setWordWrap(true);
         layout->addWidget(tech);
 
         layout->addStretch();
 
         QLabel *copy = new QLabel("Made with Qt 6 & MD3");
-        copy->setStyleSheet("font-size: 11px; color: #79747E;");
+        copy->setStyleSheet(QString("font-size: 11px; color: %1;").arg(m_outline));
         copy->setAlignment(Qt::AlignCenter);
         layout->addWidget(copy);
 
@@ -501,8 +566,8 @@ private:
             m_parser.setFilePath(CsesParser::savedPath());
             m_pathLabel->setText(m_parser.filePath());
             m_pathLabel->setStyleSheet(
-                "background-color: #F3EDF7; color: #1C1B1F; padding: 10px 12px; "
-                "border-radius: 12px; font-size: 13px;"
+                QString("background-color: %1; color: %2; padding: 10px 12px; "
+                        "border-radius: 12px; font-size: 13px;").arg(m_surfaceContainer, m_onSurface)
             );
             QMessageBox::information(this, "成功", "课表导入成功！");
         } else {

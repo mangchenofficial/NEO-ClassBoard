@@ -9,6 +9,8 @@
 #include <QComboBox>
 #include <QFrame>
 #include <QMessageBox>
+#include <QGuiApplication>
+#include <QStyleHints>
 #include "csesparser.h"
 
 class ClassSwapDialog : public QDialog
@@ -19,25 +21,28 @@ public:
     explicit ClassSwapDialog(CsesParser &parser, QWidget *parent = nullptr)
         : QDialog(parent), m_parser(parser)
     {
+        bool dark = QGuiApplication::styleHints()->colorScheme() == Qt::ColorScheme::Dark;
+        initColors(dark);
+
         setWindowTitle("换课");
         setFixedSize(420, 360);
-        setStyleSheet(
-            "QDialog { background-color: #FEF7FF; }"
-            "QLabel { color: #1C1B1F; }"
-            "QComboBox { padding: 6px 12px; border: 1px solid #CAC4D0; border-radius: 8px; "
-            "background: #F3EDF7; font-size: 13px; }"
-        );
+        setStyleSheet(QString(
+            "QDialog { background-color: %1; }"
+            "QLabel { color: %2; }"
+            "QComboBox { padding: 6px 12px; border: 1px solid %3; border-radius: 8px; "
+            "background: %4; font-size: 13px; color: %2; }"
+        ).arg(m_surface, m_onSurface, m_outlineVariant, m_surfaceContainer));
 
         QVBoxLayout *layout = new QVBoxLayout(this);
         layout->setContentsMargins(20, 20, 20, 20);
         layout->setSpacing(12);
 
         QLabel *title = new QLabel("换课");
-        title->setStyleSheet("font-size: 20px; font-weight: bold; color: #1C1B1F;");
+        title->setStyleSheet(QString("font-size: 20px; font-weight: bold; color: %1;").arg(m_onSurface));
         layout->addWidget(title);
 
         QLabel *tip = new QLabel("仅影响当天课表，不会修改原始文件");
-        tip->setStyleSheet("font-size: 12px; color: #79747E;");
+        tip->setStyleSheet(QString("font-size: 12px; color: %1;").arg(m_outline));
         layout->addWidget(tip);
 
         QVariantList todayClasses = m_parser.getTodayClassesRaw();
@@ -50,7 +55,7 @@ public:
 
         // 交换两节课
         QLabel *swapTitle = new QLabel("交换两节课");
-        swapTitle->setStyleSheet("font-size: 15px; font-weight: bold; color: #6750A4;");
+        swapTitle->setStyleSheet(QString("font-size: 15px; font-weight: bold; color: %1;").arg(m_primary));
         layout->addWidget(swapTitle);
 
         QHBoxLayout *swapRow = new QHBoxLayout;
@@ -63,23 +68,23 @@ public:
         swapRow->addWidget(comboA);
         QLabel *arrow = new QLabel("⇄");
         arrow->setAlignment(Qt::AlignCenter);
-        arrow->setStyleSheet("font-size: 18px; color: #6750A4;");
+        arrow->setStyleSheet(QString("font-size: 18px; color: %1;").arg(m_primary));
         swapRow->addWidget(arrow);
         swapRow->addWidget(comboB);
         layout->addLayout(swapRow);
 
-        QPushButton *swapBtn = makeBtn("交换", "#0B57D0");
+        QPushButton *swapBtn = makeBtn("交换", m_primary, m_onPrimary);
         layout->addWidget(swapBtn);
 
         layout->addSpacing(4);
         QFrame *sep = new QFrame;
         sep->setFrameShape(QFrame::HLine);
-        sep->setStyleSheet("background-color: #CAC4D0; max-height: 1px; border: none;");
+        sep->setStyleSheet(QString("background-color: %1; max-height: 1px; border: none;").arg(m_outlineVariant));
         layout->addWidget(sep);
 
         // 替换单节课
         QLabel *replaceTitle = new QLabel("替换单节课");
-        replaceTitle->setStyleSheet("font-size: 15px; font-weight: bold; color: #6750A4;");
+        replaceTitle->setStyleSheet(QString("font-size: 15px; font-weight: bold; color: %1;").arg(m_primary));
         layout->addWidget(replaceTitle);
 
         QHBoxLayout *replaceRow = new QHBoxLayout;
@@ -95,22 +100,22 @@ public:
         replaceRow->addWidget(comboTarget);
         QLabel *arrow2 = new QLabel("→");
         arrow2->setAlignment(Qt::AlignCenter);
-        arrow2->setStyleSheet("font-size: 16px; color: #6750A4;");
+        arrow2->setStyleSheet(QString("font-size: 16px; color: %1;").arg(m_primary));
         replaceRow->addWidget(arrow2);
         replaceRow->addWidget(comboNew);
         layout->addLayout(replaceRow);
 
-        QPushButton *replaceBtn = makeBtn("替换", "#0B57D0");
+        QPushButton *replaceBtn = makeBtn("替换", m_primary, m_onPrimary);
         layout->addWidget(replaceBtn);
 
         layout->addSpacing(4);
         QFrame *sep2 = new QFrame;
         sep2->setFrameShape(QFrame::HLine);
-        sep2->setStyleSheet("background-color: #CAC4D0; max-height: 1px; border: none;");
+        sep2->setStyleSheet(QString("background-color: %1; max-height: 1px; border: none;").arg(m_outlineVariant));
         layout->addWidget(sep2);
 
         // 清除换课
-        QPushButton *clearBtn = makeBtn("清除所有换课", "#B3261E");
+        QPushButton *clearBtn = makeBtn("清除所有换课", m_error, m_onError);
         layout->addWidget(clearBtn);
 
         layout->addStretch();
@@ -136,13 +141,44 @@ private:
     CsesParser &m_parser;
     QComboBox *comboA, *comboB, *comboTarget, *comboNew;
 
-    QPushButton* makeBtn(const QString &text, const QString &bgColor) {
+    QString m_surface, m_onSurface, m_surfaceContainer, m_onSurfaceVariant;
+    QString m_primary, m_onPrimary, m_primaryContainer;
+    QString m_outline, m_outlineVariant, m_error, m_onError;
+
+    void initColors(bool dark) {
+        if (dark) {
+            m_surface = "#1C1B1F";
+            m_onSurface = "#E6E1E5";
+            m_surfaceContainer = "#2B2930";
+            m_onSurfaceVariant = "#CAC4D0";
+            m_primary = "#D0BCFF";
+            m_onPrimary = "#381E72";
+            m_primaryContainer = "#4F378B";
+            m_outline = "#938F99";
+            m_outlineVariant = "#49454F";
+            m_error = "#F2B8B5";
+            m_onError = "#601410";
+        } else {
+            m_surface = "#FEF7FF";
+            m_onSurface = "#1C1B1F";
+            m_surfaceContainer = "#F3EDF7";
+            m_onSurfaceVariant = "#49454F";
+            m_primary = "#6750A4";
+            m_onPrimary = "#FFFFFF";
+            m_primaryContainer = "#E8DEF8";
+            m_outline = "#79747E";
+            m_outlineVariant = "#CAC4D0";
+            m_error = "#B3261E";
+            m_onError = "#FFFFFF";
+        }
+    }
+
+    QPushButton* makeBtn(const QString &text, const QString &bg, const QString &fg) {
         QPushButton *btn = new QPushButton(text);
         btn->setStyleSheet(
-            QString("QPushButton { background-color: %1; color: white; border: none; "
-                    "border-radius: 20px; padding: 8px 24px; font-size: 13px; font-weight: bold; }"
-                    "QPushButton:hover { background-color: %2; }")
-                .arg(bgColor, bgColor == "#B3261E" ? "#8C1D18" : "#0842A0")
+            QString("QPushButton { background-color: %1; color: %2; border: none; "
+                    "border-radius: 20px; padding: 8px 24px; font-size: 13px; font-weight: bold; }")
+                .arg(bg, fg)
         );
         return btn;
     }

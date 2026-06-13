@@ -20,6 +20,7 @@ qt_add_executable(ClassBoard
     settingsdialog.h
     scheduleeditor.h
     classswapdialog.h
+    resources.qrc
 )
 
 qt_add_qml_module(ClassBoard
@@ -28,6 +29,7 @@ qt_add_qml_module(ClassBoard
     QML_FILES
         main.qml
         Settings.qml
+        Icon.qml
     IMPORTS
         QtQuick.Controls
         Qt.labs.platform

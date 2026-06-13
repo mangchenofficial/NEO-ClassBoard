@@ -2,6 +2,7 @@
 #define CSESPARSER_H
 
 #include <QObject>
+#include <QCoreApplication>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QString>
@@ -17,6 +18,8 @@
 #include <QDateTime>
 #include <QSettings>
 #include <QUrl>
+#include <QStyleHints>
+#include <QGuiApplication>
 
 #ifdef Q_OS_WIN
 #include <windows.h>
@@ -47,13 +50,21 @@ class CsesParser : public QObject
     Q_PROPERTY(bool hideOnMaximized READ hideOnMaximized WRITE setHideOnMaximized NOTIFY hideOnMaximizedChanged)
     Q_PROPERTY(bool hideOnFullscreen READ hideOnFullscreen WRITE setHideOnFullscreen NOTIFY hideOnFullscreenChanged)
     Q_PROPERTY(QString soundFilePath READ soundFilePath WRITE setSoundFilePath NOTIFY soundFilePathChanged)
+    Q_PROPERTY(bool isDarkTheme READ isDarkTheme NOTIFY colorSchemeChanged)
+    Q_PROPERTY(QVariantMap colorScheme READ colorScheme NOTIFY colorSchemeChanged)
 
 public:
-    explicit CsesParser(QObject *parent = nullptr) : QObject(parent), m_loaded(false), m_timeOffset(0), m_lastNotifiedIndex(-1), m_rescheduleDay(0), m_preparationTime(2), m_lastPrepNotifiedIndex(-1), m_currentWeek(0), m_hideInClass(false), m_miniMode(false), m_hoverFade(false), m_widgetScale(1.0), m_widgetOpacity(1.0), m_notificationSound(true), m_soundVolume(0.7), m_hideOnMaximized(false), m_hideOnFullscreen(false) {
+    explicit CsesParser(QObject *parent = nullptr) : QObject(parent), m_loaded(false), m_timeOffset(0), m_lastNotifiedIndex(-1), m_rescheduleDay(0), m_preparationTime(2), m_lastPrepNotifiedIndex(-1), m_currentWeek(0), m_hideInClass(false), m_miniMode(false), m_hoverFade(false), m_widgetScale(1.0), m_widgetOpacity(1.0), m_notificationSound(true), m_soundVolume(0.7), m_hideOnMaximized(false), m_hideOnFullscreen(false), m_isDarkTheme(false) {
         m_soundFilePath = dataDir() + "/notification.wav";
         loadSaved();
         loadConfig();
         loadSwaps();
+        if (const QStyleHints *styleHints = QGuiApplication::styleHints()) {
+            m_isDarkTheme = (styleHints->colorScheme() == Qt::ColorScheme::Dark);
+            connect(styleHints, &QStyleHints::colorSchemeChanged, this, [this](Qt::ColorScheme scheme){
+                setIsDarkTheme(scheme == Qt::ColorScheme::Dark);
+            });
+        }
         m_notifyTimer = new QTimer(this);
         m_notifyTimer->setInterval(1000);
         connect(m_notifyTimer, &QTimer::timeout, this, &CsesParser::checkNotifications);
@@ -181,6 +192,19 @@ public:
     Q_INVOKABLE void playNotificationSound() {
         if (!m_notificationSound) return;
 #ifdef Q_OS_WIN
+        playSound();
+#endif
+    }
+
+    Q_INVOKABLE void testNotificationSound() {
+#ifdef Q_OS_WIN
+        playSound();
+#endif
+    }
+
+private:
+    void playSound() {
+#ifdef Q_OS_WIN
         if (QFile::exists(m_soundFilePath)) {
             PlaySoundW((LPCWSTR)m_soundFilePath.utf16(), NULL, SND_FILENAME | SND_ASYNC);
         } else {
@@ -188,6 +212,8 @@ public:
         }
 #endif
     }
+
+public:
 
     QString soundFilePath() const { return m_soundFilePath; }
     void setSoundFilePath(const QString &val) {
@@ -205,6 +231,18 @@ public:
     bool hideOnFullscreen() const { return m_hideOnFullscreen; }
     void setHideOnFullscreen(bool val) {
         if (m_hideOnFullscreen != val) { m_hideOnFullscreen = val; emit hideOnFullscreenChanged(); saveConfig(); }
+    }
+
+    bool isDarkTheme() const { return m_isDarkTheme; }
+    void setIsDarkTheme(bool dark) {
+        if (m_isDarkTheme != dark) {
+            m_isDarkTheme = dark;
+            emit colorSchemeChanged();
+        }
+    }
+
+    QVariantMap colorScheme() const {
+        return m_isDarkTheme ? darkColors() : lightColors();
     }
 
     Q_INVOKABLE bool isForegroundWindowMaximized() {
@@ -225,15 +263,19 @@ public:
         if (!m_loaded) return false;
         QVariantList todayClasses = getTodayClasses();
         QDateTime now = QDateTime::currentDateTime().addSecs(m_timeOffset * 60);
-        int nowMinutes = now.time().hour() * 60 + now.time().minute();
+        int nowSec = now.time().hour() * 3600 + now.time().minute() * 60 + now.time().second();
         for (const auto &cls : todayClasses) {
             QVariantMap c = cls.toMap();
             if (c["type"].toString() == "class") {
-                QString start = c["start_time"].toString();
-                QString end = c["end_time"].toString();
-                int startMin = start.split(":")[0].toInt() * 60 + start.split(":")[1].toInt();
-                int endMin = end.split(":")[0].toInt() * 60 + end.split(":")[1].toInt();
-                if (nowMinutes >= startMin && nowMinutes < endMin) return true;
+                int startSec = timeToSeconds(c["start_time"].toString());
+                int endSec = timeToSeconds(c["end_time"].toString());
+                int normStart = ((startSec % 86400) + 86400) % 86400;
+                int normEnd = ((endSec % 86400) + 86400) % 86400;
+                if (normStart <= normEnd) {
+                    if (nowSec >= normStart && nowSec < normEnd) return true;
+                } else {
+                    if (nowSec >= normStart || nowSec < normEnd) return true;
+                }
             }
         }
         return false;
@@ -246,13 +288,17 @@ public:
     }
 
     Q_INVOKABLE QVariantList getClassesForDay(int day) {
+        QVariantList allClasses;
         for (const auto &schedule : m_schedules) {
             QVariantMap s = schedule.toMap();
             if (s["enable_day"].toInt() == day) {
-                return s["classes"].toList();
+                allClasses.append(s["classes"].toList());
             }
         }
-        return QVariantList();
+        std::sort(allClasses.begin(), allClasses.end(), [](const QVariant &a, const QVariant &b) {
+            return timeToSeconds(a.toMap()["start_time"].toString()) < timeToSeconds(b.toMap()["start_time"].toString());
+        });
+        return allClasses;
     }
 
     void addSubject(const QVariantMap &subj) {
@@ -291,37 +337,41 @@ public:
     }
 
     void removeClassEntry(int day, int index) {
-        for (int i = 0; i < m_schedules.size(); i++) {
-            QVariantMap s = m_schedules[i].toMap();
-            if (s["enable_day"].toInt() == day) {
-                QVariantList classes = s["classes"].toList();
-                if (index >= 0 && index < classes.size()) {
-                    classes.removeAt(index);
-                    s["classes"] = classes;
-                    m_schedules[i] = s;
-                    emit schedulesChanged();
-                }
-                return;
-            }
-        }
+        QVariantList allClasses = getClassesForDay(day);
+        if (index < 0 || index >= allClasses.size()) return;
+        allClasses.removeAt(index);
+        updateDayClasses(day, allClasses);
     }
 
     void updateDayClasses(int day, const QVariantList &classes) {
-        for (int i = 0; i < m_schedules.size(); i++) {
+        QString baseName = QString("周%1课表").arg(day);
+        QString baseWeeks = "all";
+        bool foundFirst = false;
+        for (int i = 0; i < m_schedules.size();) {
             QVariantMap s = m_schedules[i].toMap();
             if (s["enable_day"].toInt() == day) {
-                s["classes"] = classes;
-                m_schedules[i] = s;
-                emit schedulesChanged();
-                return;
+                if (!foundFirst) {
+                    baseName = s["name"].toString().isEmpty() ? baseName : s["name"].toString();
+                    baseWeeks = s["weeks"].toString().isEmpty() ? "all" : s["weeks"].toString();
+                    s["classes"] = classes;
+                    m_schedules[i] = s;
+                    foundFirst = true;
+                    ++i;
+                } else {
+                    m_schedules.removeAt(i);
+                }
+            } else {
+                ++i;
             }
         }
-        QVariantMap newSchedule;
-        newSchedule["name"] = QString("周%1课表").arg(day);
-        newSchedule["enable_day"] = day;
-        newSchedule["weeks"] = "all";
-        newSchedule["classes"] = classes;
-        m_schedules.append(newSchedule);
+        if (!foundFirst) {
+            QVariantMap newSchedule;
+            newSchedule["name"] = baseName;
+            newSchedule["enable_day"] = day;
+            newSchedule["weeks"] = baseWeeks;
+            newSchedule["classes"] = classes;
+            m_schedules.append(newSchedule);
+        }
         emit schedulesChanged();
     }
 
@@ -329,29 +379,27 @@ public:
         QString content = "version: 1\n\nsubjects:\n";
         for (const auto &subj : m_subjects) {
             QVariantMap s = subj.toMap();
-            content += "  - name: \"" + s["name"].toString() + "\"\n";
+            content += "- name: " + s["name"].toString() + "\n";
             if (s.contains("simplified_name") && !s["simplified_name"].toString().isEmpty())
-                content += "    simplified_name: \"" + s["simplified_name"].toString() + "\"\n";
-            if (s.contains("teacher") && !s["teacher"].toString().isEmpty())
-                content += "    teacher: \"" + s["teacher"].toString() + "\"\n";
-            if (s.contains("room") && !s["room"].toString().isEmpty())
-                content += "    room: \"" + s["room"].toString() + "\"\n";
+                content += "  simplified_name: " + s["simplified_name"].toString() + "\n";
+            content += "  teacher: " + (s.contains("teacher") && !s["teacher"].toString().isEmpty() ? s["teacher"].toString() : "null") + "\n";
+            content += "  room: " + (s.contains("room") && !s["room"].toString().isEmpty() ? s["room"].toString() : "null") + "\n";
         }
-        content += "\nschedules:\n";
+        content += "schedules:\n";
         for (const auto &schedule : m_schedules) {
             QVariantMap s = schedule.toMap();
-            content += "  - name: \"" + s["name"].toString() + "\"\n";
-            content += "    enable_day: " + QString::number(s["enable_day"].toInt()) + "\n";
-            content += "    weeks: " + s["weeks"].toString() + "\n";
-            content += "    classes:\n";
+            content += "- name: " + s["name"].toString() + "\n";
+            content += "  enable_day: " + QString::number(s["enable_day"].toInt()) + "\n";
+            content += "  weeks: " + s["weeks"].toString() + "\n";
+            content += "  classes:\n";
             QVariantList classes = s["classes"].toList();
             for (const auto &cls : classes) {
                 QVariantMap c = cls.toMap();
-                content += "      - subject: \"" + c["subject"].toString() + "\"\n";
-                content += "        start_time: \"" + c["start_time"].toString() + "\"\n";
-                content += "        end_time: \"" + c["end_time"].toString() + "\"\n";
+                content += "  - subject: " + c["subject"].toString() + "\n";
+                content += "    start_time: " + c["start_time"].toString() + "\n";
+                content += "    end_time: " + c["end_time"].toString() + "\n";
                 if (c.contains("type") && c["type"].toString() != "class")
-                    content += "        type: " + c["type"].toString() + "\n";
+                    content += "    type: " + c["type"].toString() + "\n";
             }
         }
         QFile file(path);
@@ -387,6 +435,12 @@ public:
         QString path = savedPath();
         if (QFile::exists(path)) {
             loadFromFile(path);
+            return;
+        }
+        QString defaultPath = QCoreApplication::applicationDirPath() + "/../新课表 - 1.yaml";
+        if (QFile::exists(defaultPath)) {
+            loadFromFile(defaultPath);
+            saveToDataDir(defaultPath);
         }
     }
 
@@ -409,26 +463,53 @@ public:
         return QFile::copy(srcPath, dst);
     }
 
+    static int timeToSeconds(const QString &timeStr) {
+        QString t = timeStr.trimmed();
+        bool negative = t.startsWith('-');
+        if (negative) t = t.mid(1);
+        int days = 0;
+        int dotPos = t.indexOf('.');
+        if (dotPos >= 0) {
+            days = t.left(dotPos).toInt();
+            t = t.mid(dotPos + 1);
+        }
+        QStringList parts = t.split(':');
+        if (parts.size() < 2) return 0;
+        int h = parts[0].toInt();
+        int m = parts[1].toInt();
+        int s = parts.size() > 2 ? parts[2].toInt() : 0;
+        int total = ((days * 24 + h) * 60 + m) * 60 + s;
+        return negative ? -total : total;
+    }
+
     Q_INVOKABLE QVariantMap getTodaySchedule() {
         if (!m_loaded) return QVariantMap();
         int dayOfWeek = m_rescheduleDay > 0 ? m_rescheduleDay : QDate::currentDate().dayOfWeek();
+        QVariantList allClasses;
+        QVariantMap combined;
+        combined["name"] = QString("周%1课表").arg(dayOfWeek);
+        combined["enable_day"] = dayOfWeek;
+        combined["weeks"] = "all";
         for (const auto &schedule : m_schedules) {
             QVariantMap s = schedule.toMap();
-            if (s["enable_day"].toInt() == dayOfWeek) {
-                QString weeks = s["weeks"].toString();
-                if (weeks == "all" || weeks.isEmpty()) return s;
-                if (m_currentWeek <= 0) return s;
-                if (weeks == "odd" && m_currentWeek % 2 == 1) return s;
-                if (weeks == "even" && m_currentWeek % 2 == 0) return s;
+            if (s["enable_day"].toInt() != dayOfWeek) continue;
+            QString weeks = s["weeks"].toString();
+            bool include = (weeks == "all" || weeks.isEmpty());
+            if (!include) {
+                if (m_currentWeek <= 0) include = true;
+                else if (weeks == "odd" && m_currentWeek % 2 == 1) include = true;
+                else if (weeks == "even" && m_currentWeek % 2 == 0) include = true;
+            }
+            if (include) {
+                allClasses.append(s["classes"].toList());
             }
         }
-        for (const auto &schedule : m_schedules) {
-            QVariantMap s = schedule.toMap();
-            if (s["enable_day"].toInt() == dayOfWeek && (s["weeks"].toString() == "all" || s["weeks"].toString().isEmpty())) {
-                return s;
-            }
-        }
-        return QVariantMap();
+        if (allClasses.isEmpty()) return QVariantMap();
+        std::sort(allClasses.begin(), allClasses.end(), [](const QVariant &a, const QVariant &b) {
+            return timeToSeconds(a.toMap()["start_time"].toString()) < timeToSeconds(b.toMap()["start_time"].toString());
+        });
+        combined["classes"] = allClasses;
+        return combined;
     }
 
     Q_INVOKABLE QVariantList getTodayClasses() {
@@ -520,6 +601,7 @@ signals:
     void hideOnMaximizedChanged();
     void hideOnFullscreenChanged();
     void soundFilePathChanged();
+    void colorSchemeChanged();
     void classChanged(const QString &subjectName, const QString &type);
     void preparationBell(const QString &subjectName);
 
@@ -547,11 +629,20 @@ private:
             node.indent = indent;
             node.isList = trimmed.startsWith("- ");
             if (node.isList) trimmed = trimmed.mid(2).trimmed();
-            int colonPos = trimmed.indexOf(':');
+            int colonPos = -1;
+            for (int k = 0; k < trimmed.size(); k++) {
+                QChar c = trimmed[k];
+                if (c == ':' && (k + 1 >= trimmed.size() || trimmed[k + 1] == ' ')) {
+                    colonPos = k;
+                    break;
+                }
+            }
             if (colonPos >= 0) {
                 node.key = trimmed.left(colonPos).trimmed();
                 node.value = trimmed.mid(colonPos + 1).trimmed();
-                if (node.value.startsWith('"') && node.value.endsWith('"'))
+                if (node.value == "null")
+                    node.value.clear();
+                else if (node.value.startsWith('"') && node.value.endsWith('"'))
                     node.value = node.value.mid(1, node.value.length() - 2);
                 else if (node.value.startsWith('\'') && node.value.endsWith('\''))
                     node.value = node.value.mid(1, node.value.length() - 2);
@@ -569,6 +660,7 @@ private:
         m_schedules.clear();
 
         QList<YamlNode> nodes = tokenize(content);
+        qDebug() << "CSES: tokens =" << nodes.size();
         int i = 0;
         while (i < nodes.size()) {
             if (nodes[i].key == "subjects" && nodes[i].value.isEmpty()) {
@@ -602,6 +694,8 @@ private:
                     i++;
                 }
                 m_subjects.append(subject);
+            } else if (nodes[i].indent == baseIndent && !nodes[i].isList) {
+                break;
             } else {
                 i++;
             }
@@ -622,14 +716,17 @@ private:
                         if (nodes[i].key == "enable_day") schedule["enable_day"] = nodes[i].value.toInt();
                         else if (nodes[i].key == "weeks") schedule["weeks"] = nodes[i].value;
                         i++;
-                    } else if (nodes[i].key == "subject") {
+                    } else if (nodes[i].isList && (nodes[i].key == "subject" || nodes[i].key.contains("subject"))) {
                         QVariantList classes;
                         while (i < nodes.size() && nodes[i].indent > baseIndent) {
+                            if (!nodes[i].isList && (nodes[i].key == "enable_day" || nodes[i].key == "weeks"))
+                                break;
                             if (nodes[i].isList && nodes[i].key == "subject") {
                                 QVariantMap cls;
                                 cls["subject"] = nodes[i].value;
                                 i++;
                                 while (i < nodes.size() && nodes[i].indent > baseIndent && !nodes[i].isList) {
+                                    if (nodes[i].key == "enable_day" || nodes[i].key == "weeks") break;
                                     if (nodes[i].key == "start_time") cls["start_time"] = nodes[i].value;
                                     else if (nodes[i].key == "end_time") cls["end_time"] = nodes[i].value;
                                     i++;
@@ -644,12 +741,90 @@ private:
                         i++;
                     }
                 }
+                if (!schedule.contains("enable_day")) schedule["enable_day"] = 0;
+                if (!schedule.contains("weeks")) schedule["weeks"] = "all";
                 m_schedules.append(schedule);
             } else {
                 i++;
             }
         }
         return i;
+    }
+
+    static QVariantMap lightColors() {
+        return {
+            {"primary", "#6750A4"},
+            {"onPrimaryColor", "#FFFFFF"},
+            {"primaryContainer", "#EADDFF"},
+            {"onPrimaryContainerColor", "#21005D"},
+            {"secondary", "#625B71"},
+            {"onSecondaryColor", "#FFFFFF"},
+            {"secondaryContainer", "#E8DEF8"},
+            {"onSecondaryContainerColor", "#1D192B"},
+            {"tertiary", "#7D5260"},
+            {"onTertiaryColor", "#FFFFFF"},
+            {"tertiaryContainer", "#FFD8E4"},
+            {"onTertiaryContainerColor", "#31111D"},
+            {"error", "#B3261E"},
+            {"onErrorColor", "#FFFFFF"},
+            {"errorContainer", "#F9DEDC"},
+            {"onErrorContainerColor", "#410E0B"},
+            {"background", "#FFFBFE"},
+            {"onBackgroundColor", "#1C1B1F"},
+            {"surface", "#FFFBFE"},
+            {"onSurfaceColor", "#1C1B1F"},
+            {"surfaceVariant", "#E7E0EC"},
+            {"onSurfaceVariantColor", "#49454F"},
+            {"outline", "#79747E"},
+            {"outlineVariant", "#CAC4D0"},
+            {"shadow", "#000000"},
+            {"scrim", "#000000"},
+            {"surfaceDim", "#DED8E1"},
+            {"surfaceBright", "#FEF7FF"},
+            {"surfaceContainerLowest", "#FFFFFF"},
+            {"surfaceContainerLow", "#F7F2FA"},
+            {"surfaceContainer", "#F3EDF7"},
+            {"surfaceContainerHigh", "#ECE6F0"},
+            {"surfaceContainerHighest", "#E6E0E9"}
+        };
+    }
+
+    static QVariantMap darkColors() {
+        return {
+            {"primary", "#D0BCFF"},
+            {"onPrimaryColor", "#381E72"},
+            {"primaryContainer", "#4F378B"},
+            {"onPrimaryContainerColor", "#EADDFF"},
+            {"secondary", "#CCC2DC"},
+            {"onSecondaryColor", "#332D41"},
+            {"secondaryContainer", "#4A4458"},
+            {"onSecondaryContainerColor", "#E8DEF8"},
+            {"tertiary", "#EFB8C8"},
+            {"onTertiaryColor", "#492532"},
+            {"tertiaryContainer", "#633B48"},
+            {"onTertiaryContainerColor", "#FFD8E4"},
+            {"error", "#F2B8B5"},
+            {"onErrorColor", "#601410"},
+            {"errorContainer", "#8C1D18"},
+            {"onErrorContainerColor", "#F9DEDC"},
+            {"background", "#1C1B1F"},
+            {"onBackgroundColor", "#E6E1E5"},
+            {"surface", "#1C1B1F"},
+            {"onSurfaceColor", "#E6E1E5"},
+            {"surfaceVariant", "#49454F"},
+            {"onSurfaceVariantColor", "#CAC4D0"},
+            {"outline", "#938F99"},
+            {"outlineVariant", "#49454F"},
+            {"shadow", "#000000"},
+            {"scrim", "#000000"},
+            {"surfaceDim", "#141218"},
+            {"surfaceBright", "#3B383E"},
+            {"surfaceContainerLowest", "#0F0D13"},
+            {"surfaceContainerLow", "#1C1B1F"},
+            {"surfaceContainer", "#211F26"},
+            {"surfaceContainerHigh", "#2B2930"},
+            {"surfaceContainerHighest", "#36343B"}
+        };
     }
 
     QString m_filePath;
@@ -674,6 +849,7 @@ private:
     qreal m_soundVolume;
     bool m_hideOnMaximized;
     bool m_hideOnFullscreen;
+    bool m_isDarkTheme;
     QString m_soundFilePath;
     QTimer *m_notifyTimer;
 
@@ -758,16 +934,21 @@ private:
         if (!m_loaded) return;
         QVariantList todayClasses = getTodayClasses();
         QDateTime now = QDateTime::currentDateTime().addSecs(m_timeOffset * 60);
-        int nowMinutes = now.time().hour() * 60 + now.time().minute();
-        int nowSeconds = now.time().second();
+        int nowSec = now.time().hour() * 3600 + now.time().minute() * 60 + now.time().second();
         int currentIdx = -1;
         for (int i = 0; i < todayClasses.size(); i++) {
             QVariantMap cls = todayClasses[i].toMap();
-            QString start = cls["start_time"].toString();
-            QString end = cls["end_time"].toString();
-            int startMin = start.split(":")[0].toInt() * 60 + start.split(":")[1].toInt();
-            int endMin = end.split(":")[0].toInt() * 60 + end.split(":")[1].toInt();
-            if (nowMinutes >= startMin && nowMinutes < endMin) {
+            int startSec = timeToSeconds(cls["start_time"].toString());
+            int endSec = timeToSeconds(cls["end_time"].toString());
+            int normStart = ((startSec % 86400) + 86400) % 86400;
+            int normEnd = ((endSec % 86400) + 86400) % 86400;
+            bool inClass = false;
+            if (normStart <= normEnd) {
+                inClass = (nowSec >= normStart && nowSec < normEnd);
+            } else {
+                inClass = (nowSec >= normStart || nowSec < normEnd);
+            }
+            if (inClass) {
                 currentIdx = i;
                 break;
             }
@@ -793,10 +974,11 @@ private:
             QVariantList rawClasses = getTodayClassesRaw();
             for (int i = 0; i < rawClasses.size(); i++) {
                 QVariantMap cls = rawClasses[i].toMap();
-                QString start = cls["start_time"].toString();
-                int startMin = start.split(":")[0].toInt() * 60 + start.split(":")[1].toInt();
-                int prepMin = startMin - m_preparationTime;
-                if (nowMinutes == prepMin && nowSeconds < 2 && i != m_lastPrepNotifiedIndex) {
+                int startSec = timeToSeconds(cls["start_time"].toString());
+                int normStart = ((startSec % 86400) + 86400) % 86400;
+                int prepSec = normStart - m_preparationTime * 60;
+                if (prepSec < 0) prepSec += 86400;
+                if (nowSec == prepSec && i != m_lastPrepNotifiedIndex) {
                     m_lastPrepNotifiedIndex = i;
                     QVariantMap subj = getSubjectInfo(cls["subject"].toString());
                     emit preparationBell(subj["name"].toString());

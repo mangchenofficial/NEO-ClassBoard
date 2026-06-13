@@ -9,7 +9,7 @@ Window {
     width: 560
     height: 400
     flags: Qt.Window
-    color: "#FEF7FF"
+    color: Theme.color.surfaceBright
     
     signal importClicked()
     
@@ -20,7 +20,7 @@ Window {
         Rectangle {
             Layout.preferredWidth: 64
             Layout.fillHeight: true
-            color: "#F3EDF7"
+            color: Theme.color.surfaceContainer
             
             ColumnLayout {
                 anchors.fill: parent
@@ -35,33 +35,24 @@ Window {
                         anchors.fill: parent
                         anchors.margins: 4
                         radius: Theme.shape.cornerSmall
-                        color: navScheduleHover.containsMouse ? "#E8DEF8" : "transparent"
+                        color: navScheduleHover.containsMouse ? Theme.color.primaryContainer : "transparent"
                         
                         ColumnLayout {
                             anchors.centerIn: parent
                             spacing: 2
-                            
-                            Canvas {
+
+                            Icon {
                                 Layout.alignment: Qt.AlignHCenter
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                onPaint: {
-                                    var ctx = getContext("2d")
-                                    ctx.clearRect(0, 0, 24, 24)
-                                    ctx.fillStyle = "#6750A4"
-                                    ctx.font = "bold 10px sans-serif"
-                                    ctx.textAlign = "center"
-                                    ctx.textBaseline = "middle"
-                                    ctx.fillText("S", 12, 12)
-                                }
-                                Component.onCompleted: requestPaint()
+                                iconSize: 24
+                                svgPath: "M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11z"
+                                color: Theme.color.primary
                             }
-                            
+
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
                                 text: "课表"
                                 font.pixelSize: 10
-                                color: "#6750A4"
+                                color: Theme.color.primary
                             }
                         }
                         
@@ -82,33 +73,24 @@ Window {
                         anchors.fill: parent
                         anchors.margins: 4
                         radius: Theme.shape.cornerSmall
-                        color: navAboutHover.containsMouse ? "#E8DEF8" : "transparent"
+                        color: navAboutHover.containsMouse ? Theme.color.primaryContainer : "transparent"
                         
                         ColumnLayout {
                             anchors.centerIn: parent
                             spacing: 2
-                            
-                            Canvas {
+
+                            Icon {
                                 Layout.alignment: Qt.AlignHCenter
-                                Layout.preferredWidth: 24
-                                Layout.preferredHeight: 24
-                                onPaint: {
-                                    var ctx = getContext("2d")
-                                    ctx.clearRect(0, 0, 24, 24)
-                                    ctx.fillStyle = "#49454F"
-                                    ctx.font = "bold 10px sans-serif"
-                                    ctx.textAlign = "center"
-                                    ctx.textBaseline = "middle"
-                                    ctx.fillText("i", 12, 12)
-                                }
-                                Component.onCompleted: requestPaint()
+                                iconSize: 24
+                                svgPath: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+                                color: Theme.color.onSurfaceVariantColor
                             }
-                            
+
                             Text {
                                 Layout.alignment: Qt.AlignHCenter
                                 text: "关于"
                                 font.pixelSize: 10
-                                color: "#49454F"
+                                color: Theme.color.onSurfaceVariantColor
                             }
                         }
                         
@@ -128,7 +110,7 @@ Window {
         Rectangle {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            color: "#FEF7FF"
+            color: Theme.color.surfaceBright
             
             ColumnLayout {
                 anchors.fill: parent
@@ -140,13 +122,13 @@ Window {
                     font.family: Theme.typography.titleLarge.family
                     font.pixelSize: 22
                     font.weight: Theme.typography.titleLarge.weight
-                    color: "#1C1B1F"
+                    color: Theme.color.onSurfaceColor
                 }
                 
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: "#CAC4D0"
+                    color: Theme.color.outlineVariant
                 }
                 
                 ColumnLayout {
@@ -158,7 +140,7 @@ Window {
                         font.family: Theme.typography.bodyLarge.family
                         font.pixelSize: 14
                         font.weight: Font.Medium
-                        color: "#1C1B1F"
+                        color: Theme.color.onSurfaceColor
                     }
                     
                     RowLayout {
@@ -168,7 +150,7 @@ Window {
                         Rectangle {
                             Layout.fillWidth: true
                             Layout.preferredHeight: 40
-                            color: "#F3EDF7"
+                            color: Theme.color.surfaceContainer
                             radius: Theme.shape.cornerSmall
                             
                             Text {
@@ -178,7 +160,7 @@ Window {
                                 verticalAlignment: Text.AlignVCenter
                                 text: csesParser.loaded ? csesParser.filePath : "未导入课表"
                                 font.pixelSize: 13
-                                color: csesParser.loaded ? "#1C1B1F" : "#49454F"
+                                color: csesParser.loaded ? Theme.color.onSurfaceColor : Theme.color.onSurfaceVariantColor
                                 elide: Text.ElideMiddle
                             }
                         }
@@ -186,7 +168,7 @@ Window {
                         Rectangle {
                             Layout.preferredHeight: 40
                             Layout.preferredWidth: 88
-                            color: importBtnHover.containsMouse ? "#0842A0" : "#0B57D0"
+                            color: importBtnHover.containsMouse ? Qt.darker(Theme.color.primary, 1.2) : Theme.color.primary
                             radius: Theme.shape.cornerFull
                             
                             Text {
@@ -194,7 +176,7 @@ Window {
                                 text: "导入"
                                 font.pixelSize: 14
                                 font.weight: Font.Medium
-                                color: "#FFFFFF"
+                                color: Theme.color.onPrimaryColor
                             }
                             
                             MouseArea {

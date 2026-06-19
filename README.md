@@ -1,4 +1,4 @@
-# NEO ClassBoard
+﻿# NEO ClassBoard
 
 基于 PySide6 + QML 的桌面课表小组件，常驻于桌面顶部，实时显示当前/下一节课信息，支持换课、调休、提示音、自动隐藏等实用功能。
 
@@ -116,3 +116,8 @@ C:\Users\<用户名>\AppData\Local\NEO\ClassBoard\
 ## 课表文件格式
 
 支持 CSES（Class Schedule Exchange Standard）YAML 格式。
+
+## 许可
+
+本项目基于 [MIT License](LICENSE) 开源。
+

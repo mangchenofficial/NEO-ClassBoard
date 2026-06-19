@@ -1,9 +1,0 @@
-build/
-.cache/
-*.zip
-新课表*.yaml
-sample_schedule.yml
-CSES.yml
-__MACOSX/
-.DS_Store
-.trae/

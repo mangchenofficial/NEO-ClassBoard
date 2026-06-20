@@ -18,6 +18,7 @@ Window {
         { icon: "icons/schedule.svg", text: "课表" },
         { icon: "icons/dashboard.svg", text: "外观" },
         { icon: "icons/image-collection.svg", text: "组件" },
+        { icon: "", iconSource: "PluginIcon.qml", text: "插件" },
         { icon: "icons/settings.svg", text: "行为" },
         { icon: "icons/notifications.svg", text: "通知" },
         { icon: "icons/info.svg", text: "关于" }
@@ -91,11 +92,27 @@ Window {
                             anchors.leftMargin: 16
                             anchors.rightMargin: 16
                             spacing: 12
-                            Image {
-                                source: modelData.icon
-                                sourceSize: Qt.size(22, 22)
+                            Item {
                                 Layout.preferredWidth: 22
                                 Layout.preferredHeight: 22
+                                Image {
+                                    anchors.fill: parent
+                                    visible: modelData.icon !== undefined && modelData.icon !== ""
+                                    source: modelData.icon !== undefined ? modelData.icon : ""
+                                    sourceSize: Qt.size(22, 22)
+                                    fillMode: Image.PreserveAspectFit
+                                }
+                                Loader {
+                                    id: navIconLoader
+                                    anchors.fill: parent
+                                    active: modelData.iconSource !== undefined && modelData.iconSource !== ""
+                                    source: active ? modelData.iconSource : ""
+                                    onLoaded: {
+                                        item.color = Qt.binding(function() {
+                                            return navItem.selected ? Theme.color.primary : Theme.color.onSurfaceVariantColor
+                                        })
+                                    }
+                                }
                             }
                             Text {
                                 text: modelData.text
@@ -448,9 +465,9 @@ Window {
                 id: page3_behavior
                 anchors.fill: parent
                 anchors.margins: 24
-                opacity: root.currentPage === 3 ? 1 : 0
+                opacity: root.currentPage === 4 ? 1 : 0
                 visible: opacity > 0.01
-                y: root.currentPage === 3 ? 0 : 12
+                y: root.currentPage === 4 ? 0 : 12
                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                 Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -509,9 +526,9 @@ Window {
                 id: page4_notifications
                 anchors.fill: parent
                 anchors.margins: 24
-                opacity: root.currentPage === 4 ? 1 : 0
+                opacity: root.currentPage === 5 ? 1 : 0
                 visible: opacity > 0.01
-                y: root.currentPage === 4 ? 0 : 12
+                y: root.currentPage === 5 ? 0 : 12
                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                 Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -613,9 +630,9 @@ Window {
                 id: page5_about
                 anchors.fill: parent
                 anchors.margins: 24
-                opacity: root.currentPage === 5 ? 1 : 0
+                opacity: root.currentPage === 6 ? 1 : 0
                 visible: opacity > 0.01
-                y: root.currentPage === 5 ? 0 : 12
+                y: root.currentPage === 6 ? 0 : 12
                 Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
                 Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
 
@@ -646,7 +663,7 @@ Window {
                             Layout.alignment: Qt.AlignHCenter
                         }
                         Text {
-                            text: "版本 1.2.7"
+                            text: "版本 1.3.0"
                             font.pixelSize: 12; color: Theme.color.onSurfaceVariantColor
                             Layout.alignment: Qt.AlignHCenter
                         }
@@ -660,14 +677,14 @@ Window {
                         Item { Layout.preferredHeight: 8 }
                         Text { text: "技术栈"; font.pixelSize: 14; font.weight: Font.Bold; color: Theme.color.onSurfaceColor }
                         Text {
-                            text: "Qt 6 (QML + C++)\nMaterial Design 3 组件库\nCSES YAML 课表格式"
+                            text: "Python (PySide6 + QML)\nMaterial Design 3 组件库\nCSES YAML 课表格式"
                             font.pixelSize: 14; color: Theme.color.onSurfaceColor
                             wrapMode: Text.WordWrap
                             Layout.fillWidth: true
                         }
                         Item { Layout.preferredHeight: 20 }
                         Text {
-                            text: "Made with Qt 6 & MD3"
+                            text: "Made with PySide6 & MD3"
                             font.pixelSize: 12; color: Theme.color.onSurfaceVariantColor
                             Layout.alignment: Qt.AlignHCenter
                         }
@@ -683,6 +700,18 @@ Window {
                         anchors.bottomMargin: 4
                     }
                 }
+            }
+
+            Loader {
+                id: page6_plugins
+                objectName: "page6Plugins"
+                anchors.fill: parent
+                opacity: root.currentPage === 3 ? 1 : 0
+                visible: opacity > 0.01
+                y: root.currentPage === 3 ? 0 : 12
+                Behavior on opacity { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+                Behavior on y { NumberAnimation { duration: 200; easing.type: Easing.OutCubic } }
+                source: "PluginSettingsPage.qml"
             }
         }
     }

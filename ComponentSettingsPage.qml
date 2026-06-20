@@ -7,16 +7,37 @@ Item {
     anchors.fill: parent
     anchors.margins: 24
 
-    property var availableComponents: [
+    property var builtinComponents: [
         { compId: "time", name: "日期", icon: "icons/schedule.svg", description: "显示今天的日期和星期。" },
         { compId: "classlist", name: "课程表", icon: "icons/dashboard.svg", description: "显示当前的课程表信息。" },
         { compId: "nextclass", name: "下一节", icon: "icons/notifications.svg", description: "显示下一节课的信息。" }
     ]
 
+    property var availableComponents: builtinComponents
+
     property int selectedIndex: -1
+
+    property var selectedPluginInst: null
+    property var pluginSettingsSchema: []
+    property int _pluginSettingsRev: 0
 
     ListModel {
         id: componentBarModel
+    }
+
+    function rebuildAvailableComponents() {
+        var list = builtinComponents.slice()
+        var plugins = pluginManager.plugins
+        for (var i = 0; i < plugins.length; i++) {
+            var p = plugins[i]
+            list.push({
+                compId: p.compId,
+                name: p.name,
+                icon: p.icon || "icons/dashboard.svg",
+                description: p.description
+            })
+        }
+        availableComponents = list
     }
 
     function syncComponentBarModel() {
@@ -26,6 +47,20 @@ Item {
             componentBarModel.append({ compId: order[i] })
         }
     }
+
+    function updatePluginSettings() {
+        var compId = root.selectedCompId()
+        if (compId !== "" && pluginManager.isPlugin(compId)) {
+            root.selectedPluginInst = pluginManager.pluginInstance(compId)
+            root.pluginSettingsSchema = root.selectedPluginInst ? root.selectedPluginInst.settingsSchema() : []
+        } else {
+            root.selectedPluginInst = null
+            root.pluginSettingsSchema = []
+        }
+        root._pluginSettingsRev++
+    }
+
+    onSelectedIndexChanged: updatePluginSettings()
 
     function componentName(compId) {
         for (var i = 0; i < availableComponents.length; i++) {
@@ -61,11 +96,28 @@ Item {
         return componentBarModel.get(root.selectedIndex).compId
     }
 
-    Component.onCompleted: syncComponentBarModel()
+    Component.onCompleted: {
+        rebuildAvailableComponents()
+        syncComponentBarModel()
+    }
 
     Connections {
         target: csesParser
         function onComponentOrderChanged() { syncComponentBarModel() }
+    }
+
+    Connections {
+        target: pluginManager
+        function onPluginsChanged() {
+            rebuildAvailableComponents()
+            updatePluginSettings()
+        }
+    }
+
+    Connections {
+        target: root.selectedPluginInst
+        ignoreUnknownSignals: true
+        function onSettingsChanged() { root._pluginSettingsRev++ }
     }
 
     Flickable {
@@ -491,6 +543,19 @@ Item {
                                 wrapMode: Text.WordWrap
                                 Layout.fillWidth: true
                             }
+
+                            Text {
+                                visible: root.selectedIndex >= 0
+                                         && pluginManager.isPlugin(root.selectedCompId())
+                                text: root.selectedIndex >= 0
+                                      ? "v" + pluginManager.pluginVersion(root.selectedCompId())
+                                        + "  ·  " + pluginManager.pluginAuthor(root.selectedCompId())
+                                      : ""
+                                font.family: Theme.typography.labelSmall.family
+                                font.pixelSize: Theme.typography.labelSmall.size
+                                color: Theme.color.onSurfaceVariantColor
+                                opacity: 0.7
+                            }
                         }
 
                         Item { Layout.fillWidth: true }
@@ -538,6 +603,173 @@ Item {
                             color: Theme.color.onSurfaceVariantColor
                             Layout.alignment: Qt.AlignHCenter
                         }
+                    }
+                }
+            }
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                visible: root.selectedPluginInst !== null
+
+                Text {
+                    text: "插件设置"
+                    font.family: Theme.typography.titleSmall.family
+                    font.pixelSize: Theme.typography.titleSmall.size
+                    font.weight: Theme.typography.titleSmall.weight
+                    color: Theme.color.onSurfaceColor
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: pluginSettingsCol.implicitHeight + 32
+                    radius: Theme.shape.cornerLarge
+                    color: Theme.color.surfaceContainer
+                    border.width: 1
+                    border.color: Theme.color.outlineVariant
+                    visible: root.pluginSettingsSchema.length > 0
+
+                    ColumnLayout {
+                        id: pluginSettingsCol
+                        anchors.fill: parent
+                        anchors.margins: 16
+                        spacing: 14
+
+                        Repeater {
+                            model: root.pluginSettingsSchema
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 6
+
+                                Text {
+                                    text: modelData.label
+                                    font.family: Theme.typography.bodyMedium.family
+                                    font.pixelSize: Theme.typography.bodyMedium.size
+                                    color: Theme.color.onSurfaceColor
+                                    visible: modelData.type !== "bool"
+                                }
+
+                                Switch {
+                                    Layout.fillWidth: true
+                                    visible: modelData.type === "bool"
+                                    text: modelData.label
+                                    checked: {
+                                        root._pluginSettingsRev
+                                        return root.selectedPluginInst ? root.selectedPluginInst.getSetting(modelData.key) === true : false
+                                    }
+                                    onCheckedChanged: {
+                                        if (root.selectedPluginInst) {
+                                            var v = root.selectedPluginInst.getSetting(modelData.key)
+                                            if (checked !== v) root.selectedPluginInst.setSetting(modelData.key, checked)
+                                        }
+                                    }
+                                }
+
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    visible: modelData.type === "int" || modelData.type === "double"
+                                    spacing: 8
+
+                                    Slider {
+                                        Layout.fillWidth: true
+                                        from: modelData.min !== undefined ? modelData.min : 0
+                                        to: modelData.max !== undefined ? modelData.max : 100
+                                        value: {
+                                            root._pluginSettingsRev
+                                            return root.selectedPluginInst ? (root.selectedPluginInst.getSetting(modelData.key) || 0) : 0
+                                        }
+                                        onMoved: {
+                                            if (root.selectedPluginInst) {
+                                                root.selectedPluginInst.setSetting(modelData.key, value)
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: {
+                                            root._pluginSettingsRev
+                                            var v = root.selectedPluginInst ? root.selectedPluginInst.getSetting(modelData.key) : 0
+                                            return modelData.type === "int" ? Math.round(v) : (Math.round(v * 10) / 10)
+                                        }
+                                        font.pixelSize: 12
+                                        color: Theme.color.onSurfaceVariantColor
+                                        Layout.preferredWidth: 42
+                                    }
+                                }
+
+                                ComboBox {
+                                    Layout.fillWidth: true
+                                    visible: modelData.type === "choice"
+                                    type: "outlined"
+                                    model: {
+                                        var opts = modelData.options || []
+                                        var m = []
+                                        for (var i = 0; i < opts.length; i++) {
+                                            m.push({ text: opts[i].label, value: opts[i].value })
+                                        }
+                                        return m
+                                    }
+                                    currentIndex: {
+                                        root._pluginSettingsRev
+                                        if (!root.selectedPluginInst) return -1
+                                        var val = root.selectedPluginInst.getSetting(modelData.key)
+                                        for (var i = 0; i < model.length; i++) {
+                                            if (model[i].value === val) return i
+                                        }
+                                        return -1
+                                    }
+                                    onActivated: {
+                                        if (root.selectedPluginInst) {
+                                            root.selectedPluginInst.setSetting(modelData.key, currentValue)
+                                        }
+                                    }
+                                }
+
+                                TextField {
+                                    Layout.fillWidth: true
+                                    visible: modelData.type === "string"
+                                    type: "outlined"
+                                    text: {
+                                        root._pluginSettingsRev
+                                        return root.selectedPluginInst ? (root.selectedPluginInst.getSetting(modelData.key) || "") : ""
+                                    }
+                                    onTextChanged: {
+                                        if (root.selectedPluginInst && text !== root.selectedPluginInst.getSetting(modelData.key)) {
+                                            root.selectedPluginInst.setSetting(modelData.key, text)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Loader {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: item ? item.implicitHeight : 0
+                    active: root.selectedPluginInst !== null
+                            && pluginManager.settingsQmlUrlFor(root.selectedCompId()) !== ""
+                    source: active ? pluginManager.settingsQmlUrlFor(root.selectedCompId()) : ""
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 80
+                    radius: Theme.shape.cornerLarge
+                    color: "transparent"
+                    border.width: 1
+                    border.color: Theme.color.outlineVariant
+                    visible: root.pluginSettingsSchema.length === 0
+                            && (root.selectedPluginInst === null
+                                || pluginManager.settingsQmlUrlFor(root.selectedCompId()) === "")
+
+                    Text {
+                        anchors.centerIn: parent
+                        text: "此插件没有可配置的设置项"
+                        font.family: Theme.typography.bodySmall.family
+                        font.pixelSize: Theme.typography.bodySmall.size
+                        color: Theme.color.onSurfaceVariantColor
                     }
                 }
             }

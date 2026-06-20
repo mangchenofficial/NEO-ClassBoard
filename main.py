@@ -13,6 +13,7 @@ from PySide6.QtQuick import QQuickWindow
 
 from cses_parser import CsesParser
 from style_manager import StyleManager
+from plugin_manager import PluginManager
 
 
 def ensure_single_instance():
@@ -55,9 +56,25 @@ def main():
     app.setWindowIcon(QIcon(os.path.join(base_dir, "icons", "logo.ico")))
     engine.rootContext().setContextProperty("csesParser", cses_parser)
     engine.addImportPath(base_dir)
+    if not os.path.isdir(os.path.join(base_dir, "md3")):
+        parent_dir = os.path.dirname(base_dir)
+        if parent_dir and os.path.isdir(os.path.join(parent_dir, "md3")):
+            engine.addImportPath(parent_dir)
     qml_modules_dir = os.path.join(base_dir, "qml")
     if os.path.isdir(qml_modules_dir):
         engine.addImportPath(qml_modules_dir)
+
+    builtin_plugins_dir = os.path.join(base_dir, "plugins")
+    user_plugins_dir = PluginManager.default_plugins_dir()
+    os.makedirs(user_plugins_dir, exist_ok=True)
+    plugins_dirs = [user_plugins_dir]
+    if os.path.isdir(builtin_plugins_dir) and os.path.normpath(builtin_plugins_dir) != os.path.normpath(user_plugins_dir):
+        plugins_dirs.append(builtin_plugins_dir)
+    plugin_manager = PluginManager(
+        plugins_dirs=plugins_dirs,
+        context={"engine": engine, "csesParser": cses_parser},
+    )
+    engine.rootContext().setContextProperty("pluginManager", plugin_manager)
 
     engine.objectCreationFailed.connect(lambda: app.exit(-1))
 
@@ -178,6 +195,10 @@ def main():
 
     tray_icon.activated.connect(lambda reason:
         toggle_window() if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
+
+    if os.environ.get('CLASSBOARD_DEBUG_SETTINGS'):
+        from PySide6.QtCore import QTimer
+        QTimer.singleShot(1000, lambda: load_qml_window("SettingsDialog.qml"))
 
     return app.exec()
 

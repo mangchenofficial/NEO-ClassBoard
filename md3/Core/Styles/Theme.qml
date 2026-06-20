@@ -75,105 +75,105 @@ QtObject {
     // Typography
     property QtObject typography: QtObject {
         property QtObject displayLarge: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 57
             property real lineHeight: 64
             property real tracking: -0.25
         }
         property QtObject displayMedium: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 45
             property real lineHeight: 52
             property real tracking: 0
         }
         property QtObject displaySmall: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 36
             property real lineHeight: 44
             property real tracking: 0
         }
         property QtObject headlineLarge: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 32
             property real lineHeight: 40
             property real tracking: 0
         }
         property QtObject headlineMedium: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 28
             property real lineHeight: 36
             property real tracking: 0
         }
         property QtObject headlineSmall: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 24
             property real lineHeight: 32
             property real tracking: 0
         }
         property QtObject titleLarge: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 22
             property real lineHeight: 28
             property real tracking: 0
         }
         property QtObject titleMedium: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Medium
             property int size: 16
             property real lineHeight: 24
             property real tracking: 0.15
         }
         property QtObject titleSmall: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Medium
             property int size: 14
             property real lineHeight: 20
             property real tracking: 0.1
         }
         property QtObject labelLarge: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Medium
             property int size: 14
             property real lineHeight: 20
             property real tracking: 0.1
         }
         property QtObject labelMedium: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Medium
             property int size: 12
             property real lineHeight: 16
             property real tracking: 0.5
         }
         property QtObject labelSmall: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Medium
             property int size: 11
             property real lineHeight: 16
             property real tracking: 0.5
         }
         property QtObject bodyLarge: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 16
             property real lineHeight: 24
             property real tracking: 0.5
         }
         property QtObject bodyMedium: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 14
             property real lineHeight: 20
             property real tracking: 0.25
         }
         property QtObject bodySmall: QtObject {
-            property string family: "Roboto"
+            property string family: "MiSans"
             property int weight: Font.Normal
             property int size: 12
             property real lineHeight: 16

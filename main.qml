@@ -6,16 +6,40 @@ import md3.Core
 Window {
     id: root
     visible: true
-    width: (isMini ? 320 : 96 + 12 + Math.max(200, displayItems.length > 0 ? 156 + (displayItems.length - 1) * 36 : 200) + 12 + 80 + 12) * widgetScale
+    width: (isMini ? 320 : root.componentBarWidth) * widgetScale
     height: (isMini ? 40 : 64) * widgetScale
     title: "课表小组件"
     
     flags: Qt.FramelessWindowHint
 
+    function compWidth(compId) {
+        if (compId === "time") return 96
+        if (compId === "nextclass") return 80
+        if (compId === "classlist") {
+            return Math.max(200, displayItems.length > 0 ? 156 + (displayItems.length - 1) * 36 : 200)
+        }
+        if (pluginManager && pluginManager.isPlugin(compId)) {
+            var pw = pluginManager.preferredWidth(compId)
+            if (pw > 0) return pw
+        }
+        return 120
+    }
+
+    readonly property real componentBarWidth: {
+        if (!csesParser) return 320
+        var order = csesParser.componentOrder
+        var w = 12
+        for (var i = 0; i < order.length; i++) {
+            if (!csesParser.isComponentVisible(order[i])) continue
+            w += compWidth(order[i]) + 12
+        }
+        return Math.max(w, 320)
+    }
+
     Timer {
         id: zOrderTimer
         interval: 500
-        running: csesParser.alwaysOnBottom
+        running: csesParser && csesParser.alwaysOnBottom
         repeat: true
         onTriggered: root.lower()
     }
@@ -30,10 +54,11 @@ Window {
     property string nextClassName: ""
     property bool showNotification: false
     property string notificationMsg: ""
-    property bool isMini: csesParser.miniMode
+    property bool isMini: csesParser ? csesParser.miniMode : false
     property int hideTick: 0
     property bool shouldHide: {
         hideTick
+        if (!csesParser) return false
         if (csesParser.hideInClass && csesParser.isInClassNow()) return true
         if (csesParser.hideOnMaximized && csesParser.isForegroundWindowMaximized()) return true
         return false
@@ -63,9 +88,9 @@ Window {
         var total = (days * 24 + h) * 60 + m
         return negative ? -total : total
     }
-    property real widgetScale: csesParser.widgetScale
-    property real widgetOpacity: csesParser.widgetOpacity
-    property string appFont: csesParser.fontFamily.length > 0 ? csesParser.fontFamily : Theme.typography.titleSmall.family
+    property real widgetScale: csesParser ? csesParser.widgetScale : 1.0
+    property real widgetOpacity: csesParser ? csesParser.widgetOpacity : 1.0
+    property string appFont: csesParser && csesParser.fontFamily && csesParser.fontFamily.length > 0 ? csesParser.fontFamily : Theme.typography.titleSmall.family
     
     NumberAnimation {
         id: moveAnim
@@ -97,7 +122,7 @@ Window {
     onWidthChanged: centerX()
     
     function refreshData() {
-        if (!csesParser.loaded) {
+        if (!csesParser || !csesParser.loaded) {
             todayClasses = []
             displayItems = []
             currentIndex = -1
@@ -139,7 +164,7 @@ Window {
     }
     
     function updateCurrentIndex() {
-        if (!csesParser.loaded || todayClasses.length === 0) {
+        if (!csesParser || !csesParser.loaded || todayClasses.length === 0) {
             currentIndex = -1
             if (nextClassName !== "") nextClassName = ""
             return
@@ -223,7 +248,7 @@ Window {
     Rectangle {
         id: background
         anchors.fill: parent
-        color: "transparent"
+        color: root.isMini ? Theme.color.surfaceContainerHighest : "transparent"
         radius: Theme.shape.cornerMedium
         
         MouseArea {
@@ -257,7 +282,7 @@ Window {
                     return String(now.getHours()).padStart(2, '0') + ":" + String(now.getMinutes()).padStart(2, '0')
                 }
                 font.family: root.appFont
-                font.pixelSize: 14
+                font.pixelSize: 20
                 font.weight: Font.Bold
                 color: Theme.color.onSurfaceColor
 
@@ -272,7 +297,7 @@ Window {
 
             Text {
                 Layout.alignment: Qt.AlignVCenter
-                visible: !csesParser.loaded
+                visible: !csesParser || !csesParser.loaded
                 text: "暂无课表"
                 font.family: root.appFont
                 font.pixelSize: 12
@@ -282,7 +307,7 @@ Window {
 
             Text {
                 Layout.alignment: Qt.AlignVCenter
-                visible: csesParser.loaded && root.currentDisplayIndex >= 0 && root.currentDisplayIndex < root.displayItems.length
+                visible: csesParser && csesParser.loaded && root.currentDisplayIndex >= 0 && root.currentDisplayIndex < root.displayItems.length
                 text: {
                     if (root.currentDisplayIndex < 0) return ""
                     var item = root.displayItems[root.currentDisplayIndex]
@@ -343,29 +368,53 @@ Window {
             visible: !root.isMini
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 12
+            spacing: 0
 
-            Repeater {
-                model: csesParser.componentOrder
-                Loader {
-                    Layout.preferredWidth: {
-                        var compId = modelData
-                        if (compId === "time") return 96
-                        if (compId === "nextclass") return 80
-                        return undefined
+            Item { Layout.fillWidth: true }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignVCenter
+                spacing: 12
+
+                    Repeater {
+                        model: csesParser ? csesParser.componentOrder : []
+                        Item {
+                            Layout.preferredWidth: root.compWidth(modelData)
+                            Layout.fillWidth: {
+                                var compId = modelData
+                                if (pluginManager && pluginManager.isPlugin(compId)) return pluginManager.fillWidth(compId)
+                                return false
+                            }
+                            Layout.fillHeight: true
+                            visible: csesParser && csesParser.isComponentVisible(modelData)
+
+                            Loader {
+                                anchors.fill: parent
+                                active: !(pluginManager && pluginManager.isPlugin(modelData))
+                                sourceComponent: {
+                                    var compId = modelData
+                                    if (compId === "time") return timeComponent
+                                    if (compId === "classlist") return classListComponent
+                                    if (compId === "nextclass") return nextClassComponent
+                                    return null
+                                }
+                            }
+
+                            Loader {
+                                anchors.fill: parent
+                                active: pluginManager && pluginManager.isPlugin(modelData)
+                                source: active ? pluginManager.qmlUrlFor(modelData) : ""
+                                opacity: root.componentOpacity
+                                onStatusChanged: {
+                                    if (status === Loader.Error)
+                                        console.warn("Failed to load plugin component:", modelData)
+                                }
+                            }
+                        }
                     }
-                    Layout.fillWidth: modelData === "classlist"
-                    Layout.fillHeight: true
-                    sourceComponent: {
-                        var compId = modelData
-                        if (compId === "time") return timeComponent
-                        if (compId === "classlist") return classListComponent
-                        if (compId === "nextclass") return nextClassComponent
-                        return null
-                    }
-                    visible: csesParser.isComponentVisible(modelData)
                 }
-            }
+
+            Item { Layout.fillWidth: true }
         }
     }
     

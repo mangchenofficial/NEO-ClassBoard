@@ -59,8 +59,15 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          cd dist
-          zip -r ../ClassBoard-macOS.zip ClassBoard.app
+          echo "=== Debug: checking dist ==="
+          pwd
+          ls -la dist/
+          if [ -d "dist/ClassBoard.app" ]; then
+            cd dist && zip -ry ../ClassBoard-macOS.zip ClassBoard.app
+          else
+            echo "ERROR: dist/ClassBoard.app not found!"
+            exit 1
+          fi
 
       - name: Upload macOS artifact
         if: runner.os == 'macOS'

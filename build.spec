@@ -88,3 +88,16 @@ exe = EXE(
     console=False,
     icon=os.path.join('icons', 'logo.icns') if sys.platform == 'darwin' and os.path.exists(os.path.join('icons', 'logo.icns')) else 'icons/logo.ico',
 )
+
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        exe,
+        name='ClassBoard.app',
+        icon=os.path.join('icons', 'logo.icns') if os.path.exists(os.path.join('icons', 'logo.icns')) else None,
+        bundle_identifier='com.neo.classboard',
+        info_plist={
+            'NSHighResolutionCapable': True,
+            'CFBundleShortVersionString': '1.4.0',
+            'CFBundleVersion': '1.4.0',
+        },
+    )

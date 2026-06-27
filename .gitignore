@@ -2,6 +2,7 @@ __pycache__/
 *.py[cod]
 dist/
 build/
+build_pyinstaller/
 build.spec.build
 *.egg-info/
 .venv/

@@ -1,34 +1,25 @@
 import os
 import sys
+import subprocess
+import traceback
 
-if sys.platform == 'win32':
+from platform_utils import IS_WINDOWS, IS_MACOS, IS_LINUX, ensure_single_instance, set_window_bottom, set_window_topmost, show_error_dialog
+
+if IS_WINDOWS:
     os.environ['QT_QPA_PLATFORM'] = 'windows'
-
-from PySide6.QtCore import QUrl, Qt
-from PySide6.QtGui import QFontDatabase, QIcon
-from PySide6.QtWidgets import QApplication, QMessageBox, QMenu, QSystemTrayIcon
-from PySide6.QtGui import QAction, QActionGroup
-from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent, qmlRegisterSingletonType
-from PySide6.QtQuick import QQuickWindow
-
-from cses_parser import CsesParser
-from style_manager import StyleManager
-from plugin_manager import PluginManager
-
-
-def ensure_single_instance():
-    if sys.platform != 'win32':
-        return True
-    import ctypes
-    kernel32 = ctypes.windll.kernel32
-    h_mutex = kernel32.CreateMutexW(None, True, "ClassBoard_SingleInstance_Mutex")
-    if kernel32.GetLastError() == 183:
-        QMessageBox.warning(None, "ClassBoard", "已有程序正在运行，请勿重复启动。")
-        return False
-    return True
 
 
 def main():
+    from PySide6.QtCore import QUrl, Qt, QMetaObject, Q_ARG
+    from PySide6.QtGui import QFontDatabase, QIcon
+    from PySide6.QtWidgets import QApplication, QMessageBox, QSystemTrayIcon
+    from PySide6.QtQml import QQmlApplicationEngine, QQmlComponent, qmlRegisterSingletonType
+    from PySide6.QtQuick import QQuickWindow
+
+    from cses_parser import CsesParser
+    from style_manager import StyleManager
+    from plugin_manager import PluginManager
+
     if not ensure_single_instance():
         return 0
 
@@ -45,6 +36,12 @@ def main():
         path = os.path.join(font_dir, name)
         if os.path.exists(path):
             QFontDatabase.addApplicationFont(path)
+
+    if IS_MACOS:
+        app.setAttribute(Qt.AA_DontCreateNativeWidgetSiblings, True)
+        app.setStyle('fusion')
+    elif IS_LINUX:
+        app.setStyle('fusion')
 
     cses_parser = CsesParser()
 
@@ -75,6 +72,11 @@ def main():
         context={"engine": engine, "csesParser": cses_parser},
     )
     engine.rootContext().setContextProperty("pluginManager", plugin_manager)
+    engine.rootContext().setContextProperty("_platform", {
+        "isWindows": IS_WINDOWS,
+        "isMacOS": IS_MACOS,
+        "isLinux": IS_LINUX,
+    })
 
     engine.objectCreationFailed.connect(lambda: app.exit(-1))
 
@@ -96,29 +98,13 @@ def main():
         return -1
 
     def update_window_z_order():
-        if sys.platform != 'win32':
+        if not IS_WINDOWS:
             return
-        import ctypes
-        from ctypes import wintypes
-        user32 = ctypes.windll.user32
-        hwnd = wintypes.HWND(int(main_window.winId()))
-        GWL_EXSTYLE = -20
-        WS_EX_TOPMOST = 0x00000008
-        HWND_BOTTOM = wintypes.HWND(1)
-        HWND_TOPMOST = wintypes.HWND(-1)
-        flags = 0x0001 | 0x0002 | 0x0020
-        user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
-        user32.SetWindowPos.restype = wintypes.BOOL
-        exstyle = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        hwnd = int(main_window.winId())
         if cses_parser.alwaysOnBottom:
-            exstyle &= ~WS_EX_TOPMOST
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, exstyle)
-            user32.SetWindowPos(hwnd, HWND_BOTTOM, 0, 0, 0, 0, flags)
+            set_window_bottom(hwnd)
         else:
-            exstyle |= WS_EX_TOPMOST
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, exstyle)
-            user32.SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags)
-        user32.UpdateWindow(hwnd)
+            set_window_topmost(hwnd)
 
     cses_parser.alwaysOnBottomChanged.connect(update_window_z_order)
     update_window_z_order()
@@ -135,33 +121,8 @@ def main():
     tray_icon.setToolTip("NEO ClassBoard")
     tray_icon.setVisible(True)
 
-    tray_menu = QMenu()
-    act_show = tray_menu.addAction(QIcon(os.path.join(base_dir, "icons", "dashboard.svg")), "显示/隐藏")
-    act_settings = tray_menu.addAction(QIcon(os.path.join(base_dir, "icons", "settings.svg")), "设置")
-    
-    reschedule_menu = tray_menu.addMenu("调休日")
-    reschedule_menu.setIcon(QIcon(os.path.join(base_dir, "icons", "schedule.svg")))
-    reschedule_group = QActionGroup(reschedule_menu)
-    act_reschedule_none = reschedule_menu.addAction("不调休")
-    act_reschedule_none.setCheckable(True)
-    act_reschedule_none.setChecked(True)
-    reschedule_group.addAction(act_reschedule_none)
-    day_names = ["", "周一", "周二", "周三", "周四", "周五", "周六", "周日"]
-    for d in range(1, 8):
-        act = reschedule_menu.addAction(day_names[d])
-        act.setCheckable(True)
-        act.setData(d)
-        reschedule_group.addAction(act)
-    tray_menu.addSeparator()
-    act_swap = tray_menu.addAction(QIcon(os.path.join(base_dir, "icons", "swap.svg")), "换课")
-    act_quit = tray_menu.addAction("退出")
-    tray_icon.setContextMenu(tray_menu)
-
     def toggle_window():
-        if main_window.isVisible():
-            main_window.hide()
-        else:
-            main_window.show()
+        QMetaObject.invokeMethod(main_window, "toggleVisibility")
 
     def load_qml_window(qml_name):
         qml_path = os.path.join(base_dir, qml_name)
@@ -182,19 +143,35 @@ def main():
             QMessageBox.warning(None, "QML 类型错误", f"Loaded QML is not a Window: {qml_path}")
             obj.deleteLater()
 
-    def on_reschedule_triggered(act):
-        day = act.data() or 0
-        cses_parser.setRescheduleDay(day)
+    tray_menu_comp = QQmlComponent(engine, QUrl.fromLocalFile(os.path.join(base_dir, "TrayMenu.qml")))
+    if tray_menu_comp.isError():
+        QMessageBox.critical(None, "QML 加载错误", f"Failed to load TrayMenu.qml:\n{tray_menu_comp.errorString()}")
+        return -1
+    tray_menu_obj = tray_menu_comp.create()
+    if tray_menu_obj is None:
+        details = "\n\n".join(str(e) for e in tray_menu_comp.errors())
+        QMessageBox.critical(None, "QML 创建错误", f"Failed to create TrayMenu:\n{details}")
+        return -1
 
-    act_show.triggered.connect(toggle_window)
-    act_settings.triggered.connect(lambda: load_qml_window("SettingsDialog.qml"))
-    
-    act_swap.triggered.connect(lambda: load_qml_window("ClassSwapDialog.qml"))
-    reschedule_group.triggered.connect(on_reschedule_triggered)
-    act_quit.triggered.connect(app.quit)
+    tray_menu_obj.showHideRequested.connect(toggle_window)
+    tray_menu_obj.settingsRequested.connect(lambda: load_qml_window("SettingsDialog.qml"))
+    tray_menu_obj.swapRequested.connect(lambda: load_qml_window("ClassSwapDialog.qml"))
+    tray_menu_obj.rescheduleRequested.connect(lambda day: cses_parser.setRescheduleDay(day))
+    tray_menu_obj.quitRequested.connect(lambda: QMetaObject.invokeMethod(main_window, "requestClose"))
 
-    tray_icon.activated.connect(lambda reason:
-        toggle_window() if reason == QSystemTrayIcon.ActivationReason.Trigger else None)
+    def show_tray_menu(reason):
+        if IS_MACOS:
+            geo = tray_icon.geometry()
+            pos = geo.center()
+            QMetaObject.invokeMethod(tray_menu_obj, "showAt", Q_ARG("QVariant", pos.x()), Q_ARG("QVariant", pos.y()))
+        elif reason == QSystemTrayIcon.ActivationReason.Context:
+            geo = tray_icon.geometry()
+            pos = geo.center()
+            QMetaObject.invokeMethod(tray_menu_obj, "showAt", Q_ARG("QVariant", pos.x()), Q_ARG("QVariant", pos.y()))
+        elif reason == QSystemTrayIcon.ActivationReason.Trigger:
+            toggle_window()
+
+    tray_icon.activated.connect(show_tray_menu)
 
     if os.environ.get('CLASSBOARD_DEBUG_SETTINGS'):
         from PySide6.QtCore import QTimer
@@ -204,4 +181,8 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except Exception:
+        show_error_dialog("ClassBoard 启动失败", traceback.format_exc())
+        sys.exit(1)

@@ -178,6 +178,7 @@ class CsesParser(QObject):
     colorSchemeChanged = Signal()
     componentOrderChanged = Signal()
     componentVisibilityChanged = Signal()
+    componentRowsChanged = Signal()
     classChanged = Signal(str, str)
     preparationBell = Signal(str)
 
@@ -208,8 +209,9 @@ class CsesParser(QObject):
         self._hide_on_fullscreen = False
         self._is_dark_theme = False
         self._sound_file_path = os.path.join(_data_dir(), "notification.wav")
-        self._component_order = ["time", "classlist", "nextclass"]
+        self._component_order = [["time", "classlist", "nextclass"]]
         self._component_visibility = {}
+        self._component_rows = 1
         self._sound_effect = QSoundEffect(self)
         self._sound_effect.setVolume(self._sound_volume)
 
@@ -432,6 +434,27 @@ class CsesParser(QObject):
             self.componentOrderChanged.emit()
             self._save_config()
 
+    @Property(int, notify=componentRowsChanged)
+    def componentRows(self): return len(self._component_order)
+
+    @Slot(int)
+    def setComponentRows(self, rows: int):
+        r = max(1, min(5, rows))
+        current = len(self._component_order)
+        if r == current:
+            return
+        if r > current:
+            for _ in range(r - current):
+                self._component_order.append([])
+        else:
+            for row in self._component_order[r:]:
+                self._component_order[r - 1].extend(row)
+            self._component_order = self._component_order[:r]
+        self._component_rows = r
+        self.componentRowsChanged.emit()
+        self.componentOrderChanged.emit()
+        self._save_config()
+
     @Property(bool, notify=colorSchemeChanged)
     def isDarkTheme(self): return self._is_dark_theme
 
@@ -524,24 +547,45 @@ class CsesParser(QObject):
 
     @Slot(str, int)
     def addComponent(self, comp_id: str, index: int = -1):
-        if comp_id in self._component_order:
-            return
-        if index < 0 or index > len(self._component_order):
-            index = len(self._component_order)
-        self._component_order.insert(index, comp_id)
+        for row in self._component_order:
+            if comp_id in row:
+                return
+        if self._component_order:
+            self._component_order[0].append(comp_id)
+        else:
+            self._component_order = [[comp_id]]
         self.componentOrderChanged.emit()
         self._save_config()
 
     @Slot(int)
     def removeComponent(self, index: int):
-        if 0 <= index < len(self._component_order):
-            self._component_order.pop(index)
+        flat = []
+        for row in self._component_order:
+            flat.extend(row)
+        if 0 <= index < len(flat):
+            del flat[index]
+            self._component_order = [flat] if flat else [["time", "classlist", "nextclass"]]
             self.componentOrderChanged.emit()
             self._save_config()
 
+    @Slot(int, int, int, int)
+    def moveComponent(self, srcRow: int, srcIdx: int, targetRow: int, targetIdx: int):
+        if srcRow < 0 or srcRow >= len(self._component_order):
+            return
+        if srcIdx < 0 or srcIdx >= len(self._component_order[srcRow]):
+            return
+        if targetRow < 0 or targetRow >= len(self._component_order):
+            return
+        comp_id = self._component_order[srcRow].pop(srcIdx)
+        if targetIdx < 0 or targetIdx > len(self._component_order[targetRow]):
+            targetIdx = len(self._component_order[targetRow])
+        self._component_order[targetRow].insert(targetIdx, comp_id)
+        self.componentOrderChanged.emit()
+        self._save_config()
+
     @Slot()
     def resetComponents(self):
-        self._component_order = ["time", "classlist", "nextclass"]
+        self._component_order = [["time", "classlist", "nextclass"]]
         self._component_visibility.clear()
         self.componentOrderChanged.emit()
         self.componentVisibilityChanged.emit()
@@ -549,7 +593,8 @@ class CsesParser(QObject):
 
     @Slot(result=bool)
     def isForegroundWindowMaximized(self):
-        if sys.platform != 'win32':
+        from platform_utils import IS_WINDOWS
+        if not IS_WINDOWS:
             return False
         import ctypes
         import ctypes.wintypes
@@ -615,33 +660,13 @@ class CsesParser(QObject):
 
     @Slot(result=bool)
     def getAutoStart(self):
-        if sys.platform != 'win32':
-            return False
-        import winreg
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                                r"Software\Microsoft\Windows\CurrentVersion\Run") as key:
-                winreg.QueryValueEx(key, "ClassBoard")
-                return True
-        except FileNotFoundError:
-            return False
+        from platform_utils import is_autostart_enabled
+        return is_autostart_enabled()
 
     @Slot(bool)
     def setAutoStart(self, enabled: bool):
-        if sys.platform != 'win32':
-            return
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        if enabled:
-            app_path = QCoreApplication.applicationFilePath().replace('/', '\\')
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-                winreg.SetValueEx(key, "ClassBoard", 0, winreg.REG_SZ, app_path)
-        else:
-            try:
-                with winreg.OpenKey(winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE) as key:
-                    winreg.DeleteValue(key, "ClassBoard")
-            except FileNotFoundError:
-                pass
+        from platform_utils import set_autostart
+        set_autostart(enabled)
 
     @Slot(result=str)
     def selectSoundFile(self):
@@ -974,8 +999,13 @@ class CsesParser(QObject):
         self._hide_on_maximized = _parse_bool(cfg.get("hideOnMaximized"))
         self._hide_on_fullscreen = _parse_bool(cfg.get("hideOnFullscreen"))
         self._sound_file_path = cfg.get("soundFilePath") or os.path.join(_data_dir(), "notification.wav")
-        default_order = cfg.get("componentOrder", "time,classlist,nextclass")
-        self._component_order = [x for x in default_order.split(",") if x] or ["time", "classlist", "nextclass"]
+        default_order_str = cfg.get("componentOrder", "time,classlist,nextclass")
+        if "|" in default_order_str:
+            self._component_order = [[x for x in row.split(",") if x] for row in default_order_str.split("|")]
+        else:
+            flat = [x for x in default_order_str.split(",") if x] or ["time", "classlist", "nextclass"]
+            self._component_order = [flat]
+        self._component_rows = len(self._component_order)
         vis_str = cfg.get("componentVisibility", "")
         if vis_str:
             for pair in vis_str.split(","):
@@ -1001,7 +1031,8 @@ class CsesParser(QObject):
             "hideOnMaximized": self._hide_on_maximized,
             "hideOnFullscreen": self._hide_on_fullscreen,
             "soundFilePath": self._sound_file_path,
-            "componentOrder": ",".join(self._component_order),
+            "componentOrder": "|".join(",".join(row) for row in self._component_order),
+            "componentRows": self._component_rows,
             "componentVisibility": ",".join(f"{k}:{1 if v else 0}"
                                             for k, v in self._component_visibility.items()),
         }

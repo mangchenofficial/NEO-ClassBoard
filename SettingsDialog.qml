@@ -663,7 +663,7 @@ Window {
                             Layout.alignment: Qt.AlignHCenter
                         }
                         Text {
-                            text: "版本 1.3.0"
+                            text: "版本 1.4.0"
                             font.pixelSize: 12; color: Theme.color.onSurfaceVariantColor
                             Layout.alignment: Qt.AlignHCenter
                         }

@@ -189,7 +189,7 @@ Window {
                         }
                     }
                 }
-                
+
                 Item { Layout.fillHeight: true }
             }
         }

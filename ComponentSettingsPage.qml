@@ -43,8 +43,11 @@ Item {
     function syncComponentBarModel() {
         componentBarModel.clear()
         var order = csesParser.componentOrder
-        for (var i = 0; i < order.length; i++) {
-            componentBarModel.append({ compId: order[i] })
+        for (var r = 0; r < order.length; r++) {
+            var row = order[r]
+            for (var i = 0; i < row.length; i++) {
+                componentBarModel.append({ compId: row[i], rowIndex: r })
+            }
         }
     }
 
@@ -85,10 +88,42 @@ Item {
 
     function isAdded(compId) {
         var order = csesParser.componentOrder
-        for (var i = 0; i < order.length; i++) {
-            if (order[i] === compId) return true
+        for (var r = 0; r < order.length; r++) {
+            var row = order[r]
+            for (var i = 0; i < row.length; i++) {
+                if (row[i] === compId) return true
+            }
         }
         return false
+    }
+
+    function calcGlobalIndex(rowIdx, localIdx) {
+        var order = csesParser.componentOrder
+        var cnt = 0
+        for (var r = 0; r < rowIdx; r++) cnt += order[r].length
+        return cnt + localIdx
+    }
+
+    function commitOrder() {
+        csesParser.setComponentOrder(csesParser.componentOrder)
+    }
+
+    function dropComponent(srcRow, srcIdx, dropX, dropY) {
+        var order = csesParser.componentOrder
+        var rows = order.length
+        if (rows === 0) return
+        var rowHeight = 46
+        var topMargin = 6
+
+        var targetRow = Math.floor((dropY - topMargin) / rowHeight)
+        targetRow = Math.max(0, Math.min(rows - 1, targetRow))
+
+        if (srcRow === targetRow && order[srcRow].length <= 1) {
+            return
+        }
+
+        var targetIdx = order[targetRow].length
+        csesParser.moveComponent(srcRow, srcIdx, targetRow, targetIdx)
     }
 
     function selectedCompId() {
@@ -176,162 +211,249 @@ Item {
                 }
 
                 Rectangle {
+                    id: componentBarContainer
                     Layout.fillWidth: true
-                    Layout.preferredHeight: 72
+                    Layout.preferredHeight: {
+                        var rows = csesParser.componentOrder.length
+                        var total = 0
+                        for (var r = 0; r < rows; r++) total += csesParser.componentOrder[r].length
+                        if (total === 0) return 72
+                        return rows * 52 + 12
+                    }
                     radius: Theme.shape.cornerLarge
                     color: Theme.color.surfaceContainer
                     border.width: 1
                     border.color: Theme.color.outlineVariant
 
-                    ListView {
-                        id: componentBar
+                    ColumnLayout {
                         anchors.fill: parent
-                        anchors.margins: 8
-                        orientation: ListView.Horizontal
-                        spacing: 8
-                        model: componentBarModel
-                        displaced: Transition {
-                            NumberAnimation { properties: "x"; duration: 200; easing.type: Easing.OutCubic }
-                        }
+                        anchors.margins: 6
+                        spacing: 2
 
                         Text {
-                            anchors.centerIn: parent
+                            Layout.fillWidth: true
                             text: "组件栏为空，从下方组件库添加"
                             font.pixelSize: 12
                             color: Theme.color.onSurfaceVariantColor
-                            visible: componentBarModel.count === 0
+                            visible: {
+                                var total = 0
+                                var rows = csesParser.componentOrder
+                                for (var r = 0; r < rows.length; r++) total += rows[r].length
+                                return total === 0
+                            }
+                            horizontalAlignment: Text.AlignHCenter
+                            verticalAlignment: Text.AlignVCenter
+                            Layout.fillHeight: true
                         }
 
-                        delegate: Rectangle {
-                            id: barItem
-                            width: barItemContent.implicitWidth + 28
-                            height: componentBar.height
-                            radius: Theme.shape.cornerSmall
-                            color: dragArea.pressed
-                                   ? Theme.color.surfaceContainerHighest
-                                   : root.selectedIndex === index
-                                     ? Theme.color.secondaryContainer
-                                     : dragArea.containsMouse
-                                       ? Theme.color.surfaceContainerHigh
-                                       : "transparent"
-                            opacity: csesParser.isComponentVisible(modelData) ? 1.0 : 0.45
-
-                            Behavior on color { ColorAnimation { duration: 150 } }
+                        Repeater {
+                            model: csesParser.componentOrder
 
                             RowLayout {
-                                id: barItemContent
-                                anchors.centerIn: parent
-                                spacing: 8
+                                property int rowIdx: index
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: 44
+                                spacing: 4
 
-                                Image {
-                                    source: "icons/drag_handle.svg"
-                                    sourceSize: Qt.size(16, 16)
-                                    Layout.preferredWidth: 16
-                                    Layout.preferredHeight: 16
-                                    opacity: 0.6
-                                }
+                                Rectangle {
+                                    Layout.preferredWidth: 22
+                                    Layout.preferredHeight: 22
+                                    radius: 11
+                                    color: Theme.color.surfaceContainerHighest
+                                    visible: csesParser.componentOrder.length > 1
 
-                                Image {
-                                    source: root.componentIcon(modelData)
-                                    sourceSize: Qt.size(18, 18)
-                                    Layout.preferredWidth: 18
-                                    Layout.preferredHeight: 18
-                                }
-
-                                Text {
-                                    text: root.componentName(modelData)
-                                    font.family: Theme.typography.labelLarge.family
-                                    font.pixelSize: Theme.typography.labelLarge.size
-                                    font.weight: Font.Bold
-                                    color: root.selectedIndex === index
-                                           ? Theme.color.onSecondaryContainerColor
-                                           : Theme.color.onSurfaceColor
-                                }
-                            }
-
-                            MouseArea {
-                                id: dragArea
-                                anchors.fill: parent
-                                hoverEnabled: true
-                                drag.target: dragProxy
-                                drag.axis: Drag.XAxis
-
-                                property int dragIndex: index
-
-                                onPressed: {
-                                    root.selectedIndex = index
-                                    dragProxy.compId = modelData
-                                    dragProxy.dragIndex = index
-                                    dragProxy.x = barItem.x
-                                    dragProxy.y = barItem.y
-                                    dragProxy.width = barItem.width
-                                    dragProxy.height = barItem.height
-                                    dragProxy.visible = true
-                                }
-
-                                onReleased: {
-                                    dragProxy.visible = false
-                                    var newOrder = []
-                                    for (var i = 0; i < componentBarModel.count; i++) {
-                                        newOrder.push(componentBarModel.get(i).compId)
-                                    }
-                                    csesParser.setComponentOrder(newOrder)
-                                }
-
-                                onPositionChanged: {
-                                    if (!drag.active) return
-                                    var target = componentBar.indexAt(dragProxy.x + dragProxy.width / 2, dragProxy.y + dragProxy.height / 2)
-                                    if (target >= 0 && target !== dragProxy.dragIndex) {
-                                        componentBarModel.move(dragProxy.dragIndex, target, 1)
-                                        dragProxy.dragIndex = target
+                                    Text {
+                                        anchors.centerIn: parent
+                                        text: rowIdx + 1
+                                        font.pixelSize: 10
+                                        font.weight: Font.Bold
+                                        color: Theme.color.onSurfaceVariantColor
                                     }
                                 }
 
-                                onClicked: {
-                                    root.selectedIndex = index
+                                Row {
+                                    id: componentRow
+                                    Layout.fillWidth: true
+                                    Layout.fillHeight: true
+                                    spacing: 4
+
+                                    Repeater {
+                                        model: modelData
+
+                                        Rectangle {
+                                            id: barItem
+                                            property int compIdx: index
+                                            property int compRow: rowIdx
+                                            width: barItemContent.implicitWidth + 20
+                                            height: parent.height
+                                            radius: Theme.shape.cornerSmall
+                                            color: dragArea.pressed
+                                                   ? Theme.color.surfaceContainerHighest
+                                                   : (root.selectedIndex === calcGlobalIndex(compRow, compIdx))
+                                                     ? Theme.color.secondaryContainer
+                                                     : dragArea.containsMouse
+                                                       ? Theme.color.surfaceContainerHigh
+                                                       : "transparent"
+                                            opacity: csesParser.isComponentVisible(modelData) ? 1.0 : 0.45
+
+                                            Behavior on color { ColorAnimation { duration: 150 } }
+
+                                            RowLayout {
+                                                id: barItemContent
+                                                anchors.centerIn: parent
+                                                spacing: 6
+
+                                                Image {
+                                                    source: "icons/drag_handle.svg"
+                                                    sourceSize: Qt.size(20, 20)
+                                                    Layout.preferredWidth: 20
+                                                    Layout.preferredHeight: 20
+                                                    opacity: 0.6
+                                                }
+
+                                                Image {
+                                                    source: root.componentIcon(modelData)
+                                                    sourceSize: Qt.size(16, 16)
+                                                    Layout.preferredWidth: 16
+                                                    Layout.preferredHeight: 16
+                                                }
+
+                                                Text {
+                                                    text: root.componentName(modelData)
+                                                    font.family: Theme.typography.labelLarge.family
+                                                    font.pixelSize: Theme.typography.labelLarge.size
+                                                    font.weight: Font.Bold
+                                                    color: root.selectedIndex === calcGlobalIndex(compRow, compIdx)
+                                                           ? Theme.color.onSecondaryContainerColor
+                                                           : Theme.color.onSurfaceColor
+                                                }
+                                            }
+
+                                            MouseArea {
+                                                id: dragArea
+                                                anchors.fill: parent
+                                                hoverEnabled: true
+                                                drag.target: dragProxy
+                                                drag.axis: Drag.XAndYAxis
+
+                                                onPressed: {
+                                                    root.selectedIndex = calcGlobalIndex(compRow, compIdx)
+                                                    dragProxy.compId = modelData
+                                                    dragProxy.srcRow = compRow
+                                                    dragProxy.srcIdx = compIdx
+                                                    var mapped = barItem.mapToItem(componentBarContainer, 0, 0)
+                                                    dragProxy.x = mapped.x
+                                                    dragProxy.y = mapped.y
+                                                    dragProxy.width = barItem.width
+                                                    dragProxy.height = barItem.height
+                                                    dragProxy.visible = true
+                                                }
+
+                                                onReleased: {
+                                                    dragProxy.visible = false
+                                                    root.dropComponent(
+                                                        dragProxy.srcRow, dragProxy.srcIdx,
+                                                        dragProxy.x + dragProxy.width / 2,
+                                                        dragProxy.y + dragProxy.height / 2
+                                                    )
+                                                }
+
+                                                onClicked: {
+                                                    root.selectedIndex = calcGlobalIndex(compRow, compIdx)
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }
+                    }
 
-                        Rectangle {
-                            id: dragProxy
-                            visible: false
-                            radius: Theme.shape.cornerSmall
-                            color: Theme.color.surfaceContainerHighest
-                            opacity: 0.92
-                            z: 100
+                    Rectangle {
+                        id: dragProxy
+                        visible: false
+                        radius: Theme.shape.cornerSmall
+                        color: Theme.color.surfaceContainerHighest
+                        opacity: 0.92
+                        z: 100
 
-                            property string compId: ""
-                            property int dragIndex: -1
+                        property string compId: ""
+                        property int srcRow: -1
+                        property int srcIdx: -1
 
-                            RowLayout {
-                                anchors.centerIn: parent
-                                spacing: 8
+                        RowLayout {
+                            anchors.centerIn: parent
+                            spacing: 6
 
-                                Image {
-                                    source: "icons/drag_handle.svg"
-                                    sourceSize: Qt.size(16, 16)
-                                    Layout.preferredWidth: 16
-                                    Layout.preferredHeight: 16
-                                    opacity: 0.6
-                                }
+                            Image {
+                                source: "icons/drag_handle.svg"
+                                sourceSize: Qt.size(20, 20)
+                                Layout.preferredWidth: 20
+                                Layout.preferredHeight: 20
+                                opacity: 0.6
+                            }
 
-                                Image {
-                                    source: root.componentIcon(dragProxy.compId)
-                                    sourceSize: Qt.size(18, 18)
-                                    Layout.preferredWidth: 18
-                                    Layout.preferredHeight: 18
-                                }
+                            Image {
+                                source: root.componentIcon(dragProxy.compId)
+                                sourceSize: Qt.size(18, 18)
+                                Layout.preferredWidth: 18
+                                Layout.preferredHeight: 18
+                            }
 
-                                Text {
-                                    text: root.componentName(dragProxy.compId)
-                                    font.family: Theme.typography.labelLarge.family
-                                    font.pixelSize: Theme.typography.labelLarge.size
-                                    font.weight: Font.Bold
-                                    color: Theme.color.onSurfaceColor
-                                }
+                            Text {
+                                text: root.componentName(dragProxy.compId)
+                                font.family: Theme.typography.labelLarge.family
+                                font.pixelSize: Theme.typography.labelLarge.size
+                                font.weight: Font.Bold
+                                color: Theme.color.onSurfaceColor
                             }
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 40
+                radius: Theme.shape.cornerSmall
+                color: Theme.color.surfaceContainer
+
+                RowLayout {
+                    anchors.fill: parent
+                    anchors.leftMargin: 16
+                    anchors.rightMargin: 8
+                    spacing: 12
+
+                    Text {
+                        text: "组件行数"
+                        font.family: Theme.typography.bodyLarge.family
+                        font.pixelSize: 14
+                        color: Theme.color.onSurfaceColor
+                    }
+
+                    Item { Layout.fillWidth: true }
+
+                    Text {
+                        text: csesParser.componentRows
+                        font.pixelSize: 14
+                        font.weight: Font.Bold
+                        color: Theme.color.primary
+                    }
+
+                    Button {
+                        text: "−"
+                        type: "text"
+                        Layout.preferredWidth: 44
+                        Layout.preferredHeight: 44
+                        onClicked: csesParser.setComponentRows(Math.max(1, csesParser.componentRows - 1))
+                    }
+
+                    Button {
+                        text: "+"
+                        type: "text"
+                        Layout.preferredWidth: 44
+                        Layout.preferredHeight: 44
+                        onClicked: csesParser.setComponentRows(Math.min(5, csesParser.componentRows + 1))
                     }
                 }
             }

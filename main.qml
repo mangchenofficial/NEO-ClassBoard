@@ -6,11 +6,16 @@ import md3.Core
 Window {
     id: root
     visible: true
-    width: (isMini ? 320 : root.componentBarWidth) * widgetScale
-    height: (isMini ? 40 : 64) * widgetScale
+    width: 320 * widgetScale
+    height: 64 * widgetScale
     title: "课表小组件"
     
-    flags: Qt.FramelessWindowHint
+    flags: {
+        var f = Qt.FramelessWindowHint
+        if (_platform && _platform.isMacOS)
+            f |= Qt.WindowStaysOnTopHint
+        return f
+    }
 
     function compWidth(compId) {
         if (compId === "time") return 96
@@ -26,14 +31,47 @@ Window {
     }
 
     readonly property real componentBarWidth: {
-        if (!csesParser) return 320
-        var order = csesParser.componentOrder
-        var w = 12
-        for (var i = 0; i < order.length; i++) {
-            if (!csesParser.isComponentVisible(order[i])) continue
-            w += compWidth(order[i]) + 12
+        var rows = csesParser ? csesParser.componentOrder : [[]]
+        if (!rows || rows.length === 0) return 320
+        var maxW = 0
+        for (var r = 0; r < rows.length; r++) {
+            var row = rows[r]
+            var w = 12
+            for (var j = 0; j < row.length; j++) {
+                if (csesParser.isComponentVisible(row[j]))
+                    w += compWidth(row[j]) + 12
+            }
+            maxW = Math.max(maxW, w)
         }
-        return Math.max(w, 320)
+        return Math.max(maxW, 320)
+    }
+
+    readonly property real componentBarHeight: {
+        var rows = csesParser ? csesParser.componentOrder : [[]]
+        var n = rows ? rows.length : 1
+        return 12 + n * 52 + (n - 1) * 4
+    }
+
+    readonly property int componentRows: csesParser ? csesParser.componentRows : 1
+
+    readonly property var visibleComponents: {
+        var rows = csesParser ? csesParser.componentOrder : [[]]
+        var list = []
+        if (!rows) return list
+        for (var r = 0; r < rows.length; r++) {
+            var row = rows[r]
+            for (var j = 0; j < row.length; j++) {
+                if (csesParser.isComponentVisible(row[j]))
+                    list.push(row[j])
+            }
+        }
+        return list
+    }
+
+    function getRowComponents(rowIndex) {
+        var rows = csesParser ? csesParser.componentOrder : [[]]
+        if (!rows || rowIndex >= rows.length) return []
+        return rows[rowIndex].filter(function(cid) { return csesParser.isComponentVisible(cid) })
     }
 
     Timer {
@@ -46,6 +84,7 @@ Window {
     
     color: "transparent"
     
+    property bool closing: false
     property bool expanded: true
     property var todayClasses: []
     property var displayItems: []
@@ -55,6 +94,32 @@ Window {
     property bool showNotification: false
     property string notificationMsg: ""
     property bool isMini: csesParser ? csesParser.miniMode : false
+
+    onIsMiniChanged: {
+        updateSize()
+    }
+
+    onComponentBarWidthChanged: { if (!isMini) updateSize() }
+    onComponentBarHeightChanged: { if (!isMini) updateSize() }
+    onWidgetScaleChanged: updateSize()
+
+    function updateSize() {
+        if (isMini) {
+            root.width = 320 * widgetScale
+            root.height = 40 * widgetScale
+        } else {
+            root.width = componentBarWidth * widgetScale
+            root.height = componentBarHeight * widgetScale
+        }
+    }
+
+    Behavior on width {
+        NumberAnimation { duration: 350; easing.type: Easing.InOutCubic }
+    }
+    Behavior on height {
+        NumberAnimation { duration: 350; easing.type: Easing.InOutCubic }
+    }
+
     property int hideTick: 0
     property bool shouldHide: {
         hideTick
@@ -121,6 +186,45 @@ Window {
     onShouldHideChanged: moveToTarget()
     onWidthChanged: centerX()
     
+    function switchToNextClass() {
+        if (!csesParser || !csesParser.loaded || todayClasses.length === 0) return
+        var found = -1
+        var now = new Date()
+        var nowMinutes = now.getHours() * 60 + now.getMinutes()
+        for (var i = 0; i < todayClasses.length; i++) {
+            var cls = todayClasses[i]
+            if (cls.type === "break") continue
+            var endMin = root.timeToMinutes(cls.end_time)
+            if (nowMinutes < endMin) { found = i; break }
+        }
+        if (found < 0) found = todayClasses.length - 1
+        var next = found + 1
+        while (next < todayClasses.length && todayClasses[next].type === "break") next++
+        if (next < todayClasses.length) {
+            csesParser.timeOffset = root.timeToMinutes(todayClasses[next].start_time) - nowMinutes - 1
+        }
+    }
+
+    function switchToPrevClass() {
+        if (!csesParser || !csesParser.loaded || todayClasses.length === 0) return
+        var found = -1
+        var now = new Date()
+        var nowMinutes = now.getHours() * 60 + now.getMinutes()
+        for (var i = 0; i < todayClasses.length; i++) {
+            var cls = todayClasses[i]
+            if (cls.type === "break") continue
+            var endMin = root.timeToMinutes(cls.end_time)
+            if (nowMinutes < endMin) { found = i; break }
+        }
+        if (found < 0) found = todayClasses.length - 1
+        var prev = found - 1
+        while (prev >= 0 && todayClasses[prev].type === "break") prev--
+        if (prev >= 0) {
+            var prevCls = todayClasses[prev]
+            csesParser.timeOffset = root.timeToMinutes(prevCls.start_time) - nowMinutes - 1
+        }
+    }
+
     function refreshData() {
         if (!csesParser || !csesParser.loaded) {
             todayClasses = []
@@ -251,6 +355,17 @@ Window {
         color: root.isMini ? Theme.color.surfaceContainerHighest : "transparent"
         radius: Theme.shape.cornerMedium
         
+        property real swipeStartX: 0
+        property real swipeStartY: 0
+        property bool swipeActive: false
+        
+        TapHandler {
+            enabled: true
+            onTapped: {
+                root.expanded = !root.expanded
+            }
+        }
+        
         MouseArea {
             id: hoverArea
             anchors.fill: parent
@@ -259,7 +374,67 @@ Window {
             
             onEntered: {}
             onExited: {}
-            onClicked: root.expanded = !root.expanded
+            onClicked: {
+                if (!background.swipeActive || Math.abs(mouse.x - background.swipeStartX) < 20) {
+                    root.expanded = !root.expanded
+                }
+            }
+            
+            onPressed: function(mouse) {
+                background.swipeStartX = mouse.x
+                background.swipeStartY = mouse.y
+                background.swipeActive = true
+            }
+            
+            onPositionChanged: function(mouse) {
+                if (!background.swipeActive) return
+                var dx = mouse.x - background.swipeStartX
+                swipeIndicator.iconText = dx > 0 ? "chevron_left" : "chevron_right"
+                swipeIndicator.opacity = Math.min(0.7, Math.abs(dx) / 40 * 0.7)
+            }
+            
+            onReleased: function(mouse) {
+                if (!background.swipeActive) return
+                background.swipeActive = false
+                swipeIndicator.opacity = 0
+                var dx = mouse.x - background.swipeStartX
+                var dy = mouse.y - background.swipeStartY
+                var threshold = 40
+                if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > threshold) {
+                    if (dx < -threshold) {
+                        root.switchToNextClass()
+                    } else if (dx > threshold) {
+                        root.switchToPrevClass()
+                    }
+                }
+            }
+            
+            onCanceled: {
+                background.swipeActive = false
+                swipeIndicator.opacity = 0
+            }
+        }
+    }
+    
+    Rectangle {
+        id: swipeIndicator
+        width: 36
+        height: 36
+        radius: 18
+        color: Theme.color.primaryContainer
+        opacity: 0
+        anchors.centerIn: parent
+        z: 10
+        property string iconText: "chevron_right"
+        
+        Behavior on opacity { NumberAnimation { duration: 150 } }
+        
+        Text {
+            anchors.centerIn: parent
+            text: swipeIndicator.iconText
+            font.family: Theme.iconFont.name
+            font.pixelSize: 20
+            color: Theme.color.onPrimaryContainerColor
         }
     }
     
@@ -270,7 +445,10 @@ Window {
 
         // 迷你模式：只显示当前课程
         RowLayout {
-            visible: root.isMini
+            id: miniLayout
+            visible: opacity > 0
+            opacity: root.isMini ? 1.0 : 0.0
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: 8
@@ -364,57 +542,71 @@ Window {
         }
 
         // 正常模式
-        RowLayout {
-            visible: !root.isMini
+        ColumnLayout {
+            id: normalLayout
+            visible: opacity > 0
+            opacity: !root.isMini ? 1.0 : 0.0
+            Behavior on opacity { NumberAnimation { duration: 250; easing.type: Easing.OutCubic } }
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 0
+            spacing: 4
 
-            Item { Layout.fillWidth: true }
+            Repeater {
+                model: root.componentRows
+                RowLayout {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 52
+                    Layout.minimumHeight: 52
+                    Layout.maximumHeight: 52
+                    spacing: 0
 
-            RowLayout {
-                Layout.alignment: Qt.AlignVCenter
-                spacing: 12
+                    Item { Layout.fillWidth: true }
 
-                    Repeater {
-                        model: csesParser ? csesParser.componentOrder : []
-                        Item {
-                            Layout.preferredWidth: root.compWidth(modelData)
-                            Layout.fillWidth: {
-                                var compId = modelData
-                                if (pluginManager && pluginManager.isPlugin(compId)) return pluginManager.fillWidth(compId)
-                                return false
-                            }
-                            Layout.fillHeight: true
-                            visible: csesParser && csesParser.isComponentVisible(modelData)
+                    RowLayout {
+                        Layout.alignment: Qt.AlignVCenter
+                        spacing: 12
 
-                            Loader {
-                                anchors.fill: parent
-                                active: !(pluginManager && pluginManager.isPlugin(modelData))
-                                sourceComponent: {
+                        Repeater {
+                            model: root.getRowComponents(index)
+                            Item {
+                                Layout.preferredWidth: root.compWidth(modelData)
+                                Layout.fillWidth: {
                                     var compId = modelData
-                                    if (compId === "time") return timeComponent
-                                    if (compId === "classlist") return classListComponent
-                                    if (compId === "nextclass") return nextClassComponent
-                                    return null
+                                    if (pluginManager && pluginManager.isPlugin(compId)) return pluginManager.fillWidth(compId)
+                                    return false
                                 }
-                            }
+                                Layout.fillHeight: true
+                                Layout.preferredHeight: 48
 
-                            Loader {
-                                anchors.fill: parent
-                                active: pluginManager && pluginManager.isPlugin(modelData)
-                                source: active ? pluginManager.qmlUrlFor(modelData) : ""
-                                opacity: root.componentOpacity
-                                onStatusChanged: {
-                                    if (status === Loader.Error)
-                                        console.warn("Failed to load plugin component:", modelData)
+                                Loader {
+                                    anchors.fill: parent
+                                    active: !(pluginManager && pluginManager.isPlugin(modelData))
+                                    sourceComponent: {
+                                        var compId = modelData
+                                        if (compId === "time") return timeComponent
+                                        if (compId === "classlist") return classListComponent
+                                        if (compId === "nextclass") return nextClassComponent
+                                        return null
+                                    }
+                                }
+
+                                Loader {
+                                    anchors.fill: parent
+                                    active: pluginManager && pluginManager.isPlugin(modelData)
+                                    source: active ? pluginManager.qmlUrlFor(modelData) : ""
+                                    opacity: root.componentOpacity
+                                    onStatusChanged: {
+                                        if (status === Loader.Error)
+                                            console.warn("Failed to load plugin component:", modelData)
+                                    }
                                 }
                             }
                         }
                     }
-                }
 
-            Item { Layout.fillWidth: true }
+                    Item { Layout.fillWidth: true }
+                }
+            }
         }
     }
     
@@ -432,7 +624,7 @@ Window {
         TimeSection {
             anchors.fill: parent
             fontFamily: root.appFont
-            currentWeek: csesParser.currentWeek
+            currentWeek: csesParser ? csesParser.currentWeek : 0
             bgOpacity: root.componentOpacity
         }
     }
@@ -446,7 +638,7 @@ Window {
             todayClasses: root.todayClasses
             currentIndex: root.currentIndex
             fontFamily: root.appFont
-            loaded: csesParser.loaded
+            loaded: csesParser ? csesParser.loaded : false
             bgOpacity: root.componentOpacity
             onItemClicked: root.expanded = !root.expanded
         }
@@ -462,10 +654,99 @@ Window {
         }
     }
 
+    ParallelAnimation {
+        id: closeAnimation
+        NumberAnimation {
+            target: root
+            property: "opacity"
+            from: 1.0
+            to: 0.0
+            duration: 400
+            easing.type: Easing.InCubic
+        }
+        NumberAnimation {
+            target: root
+            property: "y"
+            from: root.y
+            to: root.y - 120
+            duration: 400
+            easing.type: Easing.InCubic
+        }
+        onFinished: Qt.quit()
+    }
+
+    ParallelAnimation {
+        id: hideAnimation
+        NumberAnimation {
+            target: root
+            property: "opacity"
+            from: 1.0
+            to: 0.0
+            duration: 400
+            easing.type: Easing.InCubic
+        }
+        NumberAnimation {
+            id: hideYAnim
+            target: root
+            property: "y"
+            from: root.y
+            to: root.y - 120
+            duration: 400
+            easing.type: Easing.InCubic
+        }
+        onFinished: {
+            root.visible = false
+            root.opacity = 1.0
+            root.y = targetY()
+        }
+    }
+
+    function requestClose() {
+        if (closing) return
+        closing = true
+        closeAnimation.start()
+    }
+
+    function toggleVisibility() {
+        if (root.visible && root.opacity > 0) {
+            hideYAnim.from = root.y
+            hideYAnim.to = root.y - 120
+            hideAnimation.start()
+        } else {
+            root.visible = true
+            root.y = root.y - 120
+            root.opacity = 0.0
+            openAnimation.start()
+        }
+    }
+
+    ParallelAnimation {
+        id: openAnimation
+        NumberAnimation {
+            target: root
+            property: "opacity"
+            from: 0.0
+            to: 1.0
+            duration: 400
+            easing.type: Easing.OutCubic
+        }
+        NumberAnimation {
+            target: root
+            property: "y"
+            from: -height
+            to: targetY()
+            duration: 400
+            easing.type: Easing.OutCubic
+        }
+    }
+
     Component.onCompleted: {
+        updateSize()
         refreshData()
         centerX()
-        y = targetY()
+        y = -height
+        opacity = 0.0
+        openAnimation.start()
     }
     
     Rectangle {

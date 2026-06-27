@@ -1,9 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import sys
 from PyInstaller.utils.hooks import collect_dynamic_libs
 
-pyside6_dir = os.path.dirname(__import__('PySide6').__file__)
-qml_src = os.path.join(pyside6_dir, 'qml')
+pyside6_dir = None
+try:
+    pyside6_dir = os.path.dirname(__import__('PySide6').__file__)
+except Exception:
+    pyside6_dir = None
+qml_src = os.path.join(pyside6_dir, 'qml') if pyside6_dir else None
 
 qml_modules = ['Qt', 'QtCore', 'QtQml', 'QtQuick', 'QtMultimedia', 'QtNetwork']
 
@@ -17,8 +22,12 @@ datas = [
     ('NextClassWidget.qml', '.'),
     ('Settings.qml', '.'),
     ('TimeSection.qml', '.'),
+    ('TrayMenu.qml', '.'),
     ('classboard_plugin.py', '.'),
     ('plugin_manager.py', '.'),
+    ('platform_utils.py', '.'),
+    ('style_manager.py', '.'),
+    ('cses_editor.py', '.'),
     ('PluginIcon.qml', '.'),
     ('PluginSettingsPage.qml', '.'),
     ('plugins', 'plugins'),
@@ -28,14 +37,16 @@ datas = [
 ]
 
 for mod in qml_modules:
-    src = os.path.join(qml_src, mod)
-    if os.path.exists(src):
-        datas.append((src, os.path.join('qml', mod)))
+    if qml_src:
+        src = os.path.join(qml_src, mod)
+        if os.path.exists(src):
+            datas.append((src, os.path.join('qml', mod)))
 
 for fname in ('builtins.qmltypes', 'jsroot.qmltypes'):
-    src = os.path.join(qml_src, fname)
-    if os.path.exists(src):
-        datas.append((src, 'qml'))
+    if qml_src:
+        src = os.path.join(qml_src, fname)
+        if os.path.exists(src):
+            datas.append((src, 'qml'))
 
 binaries = []
 binaries += collect_dynamic_libs('PySide6')
@@ -75,5 +86,5 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
-    icon='icons/logo.ico',
+    icon=os.path.join('icons', 'logo.icns') if sys.platform == 'darwin' and os.path.exists(os.path.join('icons', 'logo.icns')) else 'icons/logo.ico',
 )

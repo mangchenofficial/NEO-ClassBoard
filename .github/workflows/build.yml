@@ -55,12 +55,19 @@ jobs:
           name: ClassBoard-Windows
           path: dist/ClassBoard.exe
 
-      - name: Upload artifact (macOS)
+      - name: Package macOS artifact
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          cd dist
+          zip -r ../ClassBoard-macOS.zip ClassBoard.app
+
+      - name: Upload macOS artifact
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ClassBoard-macOS
-          path: dist/ClassBoard.app
+          path: ClassBoard-macOS.zip
 
       - name: Upload artifact (Linux)
         if: runner.os == 'Linux'
@@ -83,17 +90,23 @@ jobs:
 
       - name: Package artifacts
         run: |
-          ls -la
-          for dir in ClassBoard-*; do
+          ls -laR
+          for dir in ClassBoard-Windows ClassBoard-Linux; do
             if [ -d "$dir" ]; then
               zip -r "${dir}.zip" "$dir"
             fi
           done
+          if [ -d "ClassBoard-macOS" ]; then
+            cp ClassBoard-macOS/ClassBoard-macOS.zip ClassBoard-macOS.zip 2>/dev/null || true
+          fi
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: ClassBoard-*.zip
+          files: |
+            ClassBoard-Windows.zip
+            ClassBoard-macOS.zip
+            ClassBoard-Linux.zip
           draft: false
           prerelease: false
           generate_release_notes: true
